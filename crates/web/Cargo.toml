@@ -1,0 +1,13 @@
+[package]
+name = "answer-web"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+answer-checker = { path = "../checker" }
+yew = { version = "0.23", features = ["csr"] }
+gloo-file = { version = "0.4", features = ["futures"] }
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = ["Window", "Navigator", "Clipboard", "HtmlInputElement", "HtmlTextAreaElement", "HtmlSelectElement", "FileList"] }

@@ -1,0 +1,14 @@
+[workspace]
+members = ["crates/checker", "crates/web"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+
+[profile.release]
+lto = true
+opt-level = "s"
+codegen-units = 1
+strip = true

@@ -1,0 +1,68 @@
+name: Check and deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Set up Rust
+        run: rustup toolchain install 1.98.1 --profile minimal --component rustfmt --component clippy --target wasm32-unknown-unknown
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: rust-${{ runner.os }}-1.98.1-${{ hashFiles('Cargo.lock') }}
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Test the validators
+        run: cargo test --locked -p answer-checker
+      - name: Check Rust and browser code
+        run: cargo clippy --locked --workspace --target wasm32-unknown-unknown -- -D warnings
+      - name: Install pinned Trunk
+        shell: bash
+        run: |
+          cd "$RUNNER_TEMP"
+          curl -fLO https://github.com/trunk-rs/trunk/releases/download/v0.21.14/trunk-x86_64-unknown-linux-gnu.tar.gz
+          curl -fLO https://github.com/trunk-rs/trunk/releases/download/v0.21.14/trunk-x86_64-unknown-linux-gnu.tar.gz.sha256
+          trunk_expected=$(awk '{print $1}' trunk-x86_64-unknown-linux-gnu.tar.gz.sha256)
+          printf '%s  %s\n' "$trunk_expected" trunk-x86_64-unknown-linux-gnu.tar.gz | sha256sum --check
+          tar -xzf trunk-x86_64-unknown-linux-gnu.tar.gz
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - name: Build static website
+        run: trunk --skip-version-check build --release --locked --public-url "/${GITHUB_REPOSITORY#*/}/"
+      - uses: actions/configure-pages@v5
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+      - uses: actions/upload-pages-artifact@v4
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        with:
+          path: dist
+
+  deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

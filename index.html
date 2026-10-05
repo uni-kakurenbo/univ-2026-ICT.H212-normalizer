@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ja">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta
+            name="description"
+            content="オートマトンと言語の解答書式をブラウザ内で検査・整形し、個人情報を除いた SHA-256 をコピーできます。"
+        />
+        <meta
+            http-equiv="Content-Security-Policy"
+            content="default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'none'"
+        />
+        <title>ICT.H212 オートマトンと言語 (情報通信) 解答書式チェック</title>
+        <link
+            data-trunk
+            rel="rust"
+            href="crates/web/Cargo.toml"
+            data-bin="answer-web"
+            data-wasm-opt="0"
+        />
+        <link data-trunk rel="css" href="styles.css" />
+        <link data-trunk rel="icon" href="favicon.svg" />
+    </head>
+    <body>
+        <noscript
+            >このツールには JavaScript と WebAssembly
+            が必要です。処理はブラウザ内で行います。</noscript
+        >
+    </body>
+</html>

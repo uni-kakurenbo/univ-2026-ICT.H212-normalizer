@@ -8,6 +8,7 @@ use crate::{AnswerLine, Format, Report, Section, Severity, edge_trim};
 // Do not check transition semantics, state choices, minimality or image contents.
 pub const ASSIGNMENT: Assignment = Assignment {
     id: "03",
+    hash_prefixed_finals: false,
     title: "演習03：有限オートマトン",
     note: "最初の解答行に最終状態をカンマ区切り・辞書順で記載。以降は (S,a,A) 形式の遷移を辞書順に列挙します。3-3 は PNG ファイル名。",
     sections: &[
@@ -35,7 +36,7 @@ pub const ASSIGNMENT: Assignment = Assignment {
     ],
 };
 
-fn check_transitions(r: &mut Report, rows: &[&AnswerLine<'_>]) {
+pub(super) fn check_transitions(r: &mut Report, rows: &[&AnswerLine<'_>]) {
     if let Some(finals) = rows.first() {
         if !edge_trim(finals.text).split(',').all(valid_token) {
             r.issue(Severity::Error, "final-states", Some(finals.number), "最初の解答行には最終状態をカンマ区切りで記載してください。例：A,B。括弧・空要素・空白は使いません。状態の存在や受理条件は検査しません。");

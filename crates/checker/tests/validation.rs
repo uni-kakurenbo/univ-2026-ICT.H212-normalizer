@@ -3,6 +3,7 @@ use answer_checker::{HASH_VERSION, MAX_BYTES, check, sha256};
 const A01: &str = "学籍番号: 00X00000\n氏名: ダミー\n\n1-1=====\nx,y\n========\n\n1-2=====\n日本語の 説明\n========\n\n1-3=====\nZ\nY\nX\n========\n";
 const A02: &str = "学籍番号: 00X00000\n氏名: ダミー\n\n2-1.1===\nA->x\nS->$\n========\n\n2-1.2===\nB->y\nS->zB\n========\n\n2-2=====\nC->z\nS->zC\n========\n";
 const A03: &str = "学籍番号: 00X00000\n氏名: ダミー\n\n3-1===\nA\n\n(S,x,A)\n========\n\n3-2=====\nB\n\n(S,y,B)\n========\n\n3-3=====\ndiagram.png\n========\n";
+const A04: &str = "学籍番号: 00X00000\n氏名: ダミー\n\n4-1=====\n#,A\n\n(#,x,A)\n(A,x,#)\n(S,x,A)\n========\n\n4-2=====\n#A,#AB\n\n(#A,x,#AB)\n(AB,y,#A)\n(S,x,AB)\n========\n\n4-3=====\nA->$\nA->xA\nA->yB\nB->xA\nB->yB\nS->xA\nS->yB\n========\n";
 
 fn has(input: &str, id: &str, code: &str) -> bool {
     check(id, input.as_bytes())
@@ -13,7 +14,7 @@ fn has(input: &str, id: &str, code: &str) -> bool {
 
 #[test]
 fn dummy_answers_are_not_graded() {
-    for (id, input) in [("01", A01), ("02", A02), ("03", A03)] {
+    for (id, input) in [("01", A01), ("02", A02), ("03", A03), ("04", A04)] {
         let r = check(id, input.as_bytes());
         assert_eq!(r.errors(), 0, "{id}: {:?}", r.issues);
         assert!(r.hash.is_some());
@@ -218,4 +219,176 @@ fn missing_identity_does_not_prevent_anonymous_hash_but_is_an_error() {
     let r = check("01", input.as_bytes());
     assert!(r.issues.iter().any(|i| i.code == "header-missing"));
     assert_eq!(r.hash, check("01", A01.as_bytes()).hash);
+}
+
+#[test]
+fn adding_assignment_04_keeps_previous_hashes_fixed() {
+    for (id, input, digest) in [
+        (
+            "01",
+            A01,
+            "648f1d96fd90d7ab03c905ea83c6e74db99ba7c758b7ec6916c15962f662ea17",
+        ),
+        (
+            "02",
+            A02,
+            "b1fb3de0b6ed408e2b6326e20aeb99808f2cde587f8739878787dff3ee73f04f",
+        ),
+        (
+            "03",
+            A03,
+            "bf2790e8942cc22b6f6f5560b93134be3ebba88cefc7161b170cc01045462d3f",
+        ),
+    ] {
+        assert_eq!(check(id, input.as_bytes()).hash.as_deref(), Some(digest));
+        let annotated = input.replace("\n\n", "\n#AB\n#\n\n");
+        assert_eq!(
+            check(id, annotated.as_bytes()).hash.as_deref(),
+            Some(digest)
+        );
+    }
+}
+
+#[test]
+fn assignment_04_hash_states_survive_comments_newlines_and_repeat_checking() {
+    let edited = A04
+        .replace("00X00000", "99Z99999")
+        .replace("ダミー", "別のダミー")
+        .replace("4-1=====\n", "4-1=====\n### instruction\n# comment\n")
+        .replace(
+            "4-2=====\n",
+            "#### outer instruction\n4-2=====\n### inner instruction\n",
+        )
+        .replace(
+            "(AB,y,#A)\n",
+            "(AB,y,#A)\n# remove this comment\n### instruction\n",
+        )
+        .replace('\n', "\r\n");
+    let r = check("04", format!("\u{feff}{edited}").as_bytes());
+    assert_eq!(r.errors(), 0, "{:?}", r.issues);
+    let expected = check("04", A04.as_bytes());
+    assert_eq!(r.hash, expected.hash);
+    let normalized = r.normalized.as_ref().unwrap();
+    assert!(normalized.contains("4-1=====\n#,A\n"));
+    assert!(normalized.contains("4-2=====\n#A,#AB\n"));
+    assert!(!normalized.contains("instruction"));
+    assert!(!normalized.contains("comment"));
+    let again = check("04", normalized.as_bytes());
+    assert_eq!(again.errors(), 0);
+    assert_eq!(again.normalized, r.normalized);
+    assert_eq!(again.hash, r.hash);
+    let only_hash = A04.replace("4-1=====\n#,A", "4-1=====\n#");
+    assert_eq!(check("04", only_hash.as_bytes()).errors(), 0);
+    assert!(
+        check("04", only_hash.as_bytes())
+            .hash_input
+            .unwrap()
+            .contains("4-1=====\n#\n")
+    );
+}
+
+#[test]
+fn assignment_04_sorts_lists_but_never_renames_states() {
+    let input = A04
+        .replace("4-1=====\n#,A", "4-1=====\nA,#")
+        .replace("4-2=====\n#A,#AB", "4-2=====\n#AB,#A")
+        .replace(
+            "(#A,x,#AB)\n(AB,y,#A)\n(S,x,AB)",
+            "(S,x,AB)\n(#A,x,#AB)\n(AB,y,#A)",
+        )
+        .replace("A->$\nA->xA", "A->xA\nA->$");
+    let r = check("04", input.as_bytes());
+    assert!(r.issues.iter().any(|i| i.code == "final-state-sort"));
+    assert!(r.issues.iter().any(|i| i.code == "sort"));
+    assert_eq!(r.normalized.as_deref(), Some(A04));
+    assert_eq!(r.hash, check("04", A04.as_bytes()).hash);
+    assert_eq!(check("04", r.normalized.unwrap().as_bytes()).errors(), 0);
+
+    for (before, after) in [
+        ("#A,#AB", "#A,AB#"),
+        ("#A,#AB", "#BA"),
+        ("(S,x,AB)", "(BA,x,AB)"),
+        ("(S,x,AB)", "(S,x,BA)"),
+    ] {
+        let bad = A04.replace(before, after);
+        let r = check("04", bad.as_bytes());
+        assert!(r.issues.iter().any(|i| i.code == "subset-label-sort"));
+        assert_eq!(r.normalized.as_deref(), Some(bad.as_str()));
+        assert!(has(
+            r.normalized.as_ref().unwrap(),
+            "04",
+            "subset-label-sort"
+        ));
+    }
+    // The label-order check inspects source/target, never the input symbol.
+    assert!(!has(
+        &A04.replace("(S,x,AB)", "(S,zx,AB)"),
+        "04",
+        "subset-label-sort"
+    ));
+}
+
+#[test]
+fn assignment_04_keeps_malformed_hash_final_rows_for_diagnostics() {
+    for finals in ["#A,", "#A B", "#A,,B"] {
+        let input = A04.replace("#A,#AB", finals);
+        let r = check("04", input.as_bytes());
+        assert!(
+            r.issues.iter().any(|i| i.code == "final-states"),
+            "{finals}"
+        );
+        assert!(r.hash_input.unwrap().contains("#A"));
+    }
+    let input = A04.replace("#A,#AB", "　#A,#AB");
+    assert!(has(&input, "04", "ascii"));
+    assert!(
+        check("04", input.as_bytes())
+            .normalized
+            .unwrap()
+            .contains("　#A")
+    );
+}
+
+#[test]
+fn assignment_04_checks_renaming_not_graph_correctness() {
+    for (before, after, code) in [
+        ("S->xA\nS->yB", "C->xA\nC->yB", "start-label"),
+        ("B->xA", "D->xA", "state-label-sequence"),
+        ("A->xA", "AB->xA", "state-label"),
+        ("S->xA", "S->xAB", "state-label"),
+        ("S->xA", "S->x#", "state-label"),
+        ("S->xA", "S->x#AB", "state-label"),
+        ("S->xA", "S->xq", "state-label"),
+    ] {
+        assert!(has(&A04.replace(before, after), "04", code), "{after}");
+    }
+    for rhs in ["S->xB\nS->yA", "S->xA\nS->xB\nS->yA"] {
+        let input = A04.replace("S->xA\nS->yB", rhs);
+        let r = check("04", input.as_bytes());
+        assert!(r.issues.iter().any(|i| i.code == "state-order-cross"));
+        assert!(r.normalized.unwrap().contains(rhs));
+    }
+    // Crossings across different left sides, equal terminals, determinism and
+    // whether these arbitrary productions describe the supplied DFA are not checked.
+    let different_lhs = A04
+        .replace("A->xA\nA->yB", "A->xB")
+        .replace("B->xA\nB->yB", "B->yA");
+    assert_eq!(check("04", different_lhs.as_bytes()).errors(), 0);
+    let equal_terminal = A04.replace("S->xA\nS->yB", "S->xA\nS->xB");
+    assert_eq!(check("04", equal_terminal.as_bytes()).errors(), 0);
+}
+
+#[test]
+fn assignment_04_requires_its_own_exact_markers_and_notation() {
+    for input in [
+        A04.replace("4-1=====", "4-1==="),
+        A04.replace("4-2=====", "3-2====="),
+        A04.replace("4-3=====", "4-2====="),
+    ] {
+        assert!(check("04", input.as_bytes()).hash.is_none());
+    }
+    assert!(has(&A04.replace("(S,x,A)", "S,x,A"), "04", "transition"));
+    assert!(has(&A04.replace("A->$", "A->ε"), "04", "epsilon-notation"));
+    assert!(has(&A04.replace("A->xA", "A->xA|yB"), "04", "production"));
+    assert!(check("04", A03.as_bytes()).hash.is_none());
 }

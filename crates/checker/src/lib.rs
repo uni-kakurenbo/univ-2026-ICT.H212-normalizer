@@ -96,6 +96,18 @@ pub struct AnswerLine<'a> {
 fn is_comment(text: &str) -> bool {
     text.trim_start().starts_with('#')
 }
+
+/// Assignment 04 uses '#' and '#AB' as states. Before any answer in a
+/// transition section, '#' followed by an uppercase letter, comma or end
+/// starts a final-state list. Keep even malformed candidates for diagnostics.
+/// '###' instructions and '# comment' remain comments. An ambiguous '#A...'
+/// comment in that position must instead use '###'. Never reinterpret later
+/// comment rows or change the behavior of assignments 01–03.
+fn hash_final_state_candidate(text: &str) -> bool {
+    text.trim().strip_prefix('#').is_some_and(|tail| {
+        tail.is_empty() || tail.starts_with(|c: char| c.is_ascii_uppercase() || c == ',')
+    })
+}
 pub(crate) fn edge_trim(text: &str) -> &str {
     text.trim_matches([' ', '\t'])
 }
@@ -116,6 +128,7 @@ fn looks_like_marker(text: &str) -> bool {
 /// Hash v1 is UTF-8 without BOM, LF, exact template markers and one blank line
 /// between sections, exactly one final LF. Only recognized answer sections
 /// enter the hash. Header values and whole-line # comments never enter it.
+/// A '#' state in an opted-in final-state list is answer text, not a comment.
 pub fn check(assignment_id: &str, bytes: &[u8]) -> Report {
     use Severity::*;
     let mut r = Report::default();
@@ -209,8 +222,9 @@ pub fn check(assignment_id: &str, bytes: &[u8]) -> Report {
     }
     let lf_text = text.replace("\r\n", "\n").replace('\r', "\n");
     let mut bodies: Vec<Vec<AnswerLine<'_>>> = vec![Vec::new(); assignment.sections.len()];
+    let mut has_answer = vec![false; assignment.sections.len()];
     let mut headers: [Option<AnswerLine<'_>>; 2] = [None, None];
-    let mut active = None;
+    let mut active: Option<usize> = None;
     let mut next = 0;
     let mut seen = vec![false; assignment.sections.len()];
     let mut unambiguous = true;
@@ -218,7 +232,12 @@ pub fn check(assignment_id: &str, bytes: &[u8]) -> Report {
     for (i, line) in lf_text.split_terminator('\n').enumerate() {
         let number = i + 1;
         let row = AnswerLine { text: line, number };
-        if is_comment(line) {
+        let hash_final = assignment.hash_prefixed_finals
+            && hash_final_state_candidate(line)
+            && active.is_some_and(|index| {
+                assignment.sections[index].format == Format::DfaTransitions && !has_answer[index]
+            });
+        if is_comment(line) && !hash_final {
             comment_count += 1;
             r.issue(
                 Warning,
@@ -257,6 +276,7 @@ pub fn check(assignment_id: &str, bytes: &[u8]) -> Report {
             r.issue(Error, "delimiter", Some(number), "設問番号や = の個数・空白がテンプレートと一致しません。選択した課題も確認してください。");
             unambiguous = false;
         } else if let Some(index) = active {
+            has_answer[index] |= !line.trim().is_empty();
             bodies[index].push(row);
         } else if let Some(h) = ["学籍番号:", "氏名:"]
             .iter()

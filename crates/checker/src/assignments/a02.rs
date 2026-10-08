@@ -5,6 +5,7 @@ use crate::{AnswerLine, Format, Report, Section, Severity, edge_trim};
 // Symbols and grammar equivalence are answer content, so they are not checked.
 pub const ASSIGNMENT: Assignment = Assignment {
     id: "02",
+    hash_prefixed_finals: false,
     title: "演習02：正規文法",
     note: "ASCII・1行1規則・辞書順。生成規則は ->、空列は $ を使います。文法の正しさは判定しません。",
     sections: &[
@@ -32,7 +33,7 @@ pub const ASSIGNMENT: Assignment = Assignment {
     ],
 };
 
-fn check_productions(r: &mut Report, rows: &[&AnswerLine<'_>]) {
+pub(super) fn check_productions(r: &mut Report, rows: &[&AnswerLine<'_>]) {
     use Severity::*;
     for row in rows {
         let value = edge_trim(row.text);

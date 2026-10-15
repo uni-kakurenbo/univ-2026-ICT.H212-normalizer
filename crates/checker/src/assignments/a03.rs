@@ -8,6 +8,7 @@ use crate::{AnswerLine, Format, Report, Section, Severity, edge_trim};
 // Do not check transition semantics, state choices, minimality or image contents.
 pub const ASSIGNMENT: Assignment = Assignment {
     id: "03",
+    comment_prefix: "#",
     hash_prefixed_finals: false,
     title: "演習03：有限オートマトン",
     note: "最初の解答行に最終状態をカンマ区切り・辞書順で記載。以降は (S,a,A) 形式の遷移を辞書順に列挙します。3-3 は PNG ファイル名。",
@@ -51,14 +52,7 @@ pub(super) fn check_transitions(r: &mut Report, rows: &[&AnswerLine<'_>]) {
     let transitions = rows.get(1..).unwrap_or_default();
     for row in transitions {
         let value = edge_trim(row.text);
-        let valid = value
-            .strip_prefix('(')
-            .and_then(|s| s.strip_suffix(')'))
-            .is_some_and(|inner| {
-                let fields: Vec<_> = inner.split(',').collect();
-                fields.len() == 3 && fields.iter().all(|field| valid_token(field))
-            });
-        if !valid {
+        if parse_transition(value).is_none() {
             r.issue(Severity::Error, "transition", Some(row.number), "遷移は (状態,入力記号,状態) の三つ組を空白なしで1行に1つ記載してください。例：(S,a,A)。記号の意味は検査しません。");
         }
     }
@@ -68,6 +62,30 @@ pub(super) fn check_transitions(r: &mut Report, rows: &[&AnswerLine<'_>]) {
     {
         r.issue(Severity::Error, "sort", Some(pair[1].number), "遷移行が ASCII の辞書順に並んでいません。最終状態のリストとは分けて、遷移行を並べ替えます。");
     }
+}
+
+pub(super) fn parse_transition(value: &str) -> Option<[&str; 3]> {
+    let inner = value.strip_prefix('(')?.strip_suffix(')')?;
+    let mut fields = inner.split(',');
+    let triple = [fields.next()?, fields.next()?, fields.next()?];
+    (fields.next().is_none() && triple.iter().all(|field| valid_token(field))).then_some(triple)
+}
+
+pub(super) fn state_labels<'a>(rows: &[&AnswerLine<'a>]) -> Vec<(&'a str, usize)> {
+    let mut labels = Vec::new();
+    if let Some(row) = rows.first() {
+        labels.extend(
+            edge_trim(row.text)
+                .split(',')
+                .map(|state| (state, row.number)),
+        );
+    }
+    for row in rows.iter().skip(1) {
+        if let Some([source, _, target]) = parse_transition(edge_trim(row.text)) {
+            labels.extend([(source, row.number), (target, row.number)]);
+        }
+    }
+    labels
 }
 
 fn valid_token(value: &str) -> bool {

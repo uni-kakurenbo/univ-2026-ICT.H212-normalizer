@@ -14,6 +14,7 @@ use std::collections::BTreeSet;
 // The supplied production set is not compared with a model grammar or DFA.
 pub const ASSIGNMENT: Assignment = Assignment {
     id: "04",
+    comment_prefix: "#",
     title: "演習04：正規文法と有限オートマトン",
     note: "4-1・4-2 は最終状態と遷移をそれぞれ辞書順に列挙。4-2 の状態名内の文字も辞書順（#AB）。# で始まる最終状態は保持し、注意書きには ### を使ってください。4-3 は S と A,B,C,… を使用し、同じ左辺の xY の順序が交差しないかも検査します。状態名は自動変更しません。",
     hash_prefixed_finals: true,

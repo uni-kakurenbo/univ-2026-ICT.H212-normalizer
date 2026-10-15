@@ -3,7 +3,9 @@ use answer_checker::check;
 fn main() {
     let args: Vec<_> = std::env::args().collect();
     if args.len() != 3 {
-        eprintln!("usage: cargo run -p answer-checker --example inspect -- <01|02|03> <file.txt>");
+        eprintln!(
+            "usage: cargo run -p answer-checker --example inspect -- <assignment-id> <file.txt>"
+        );
         std::process::exit(2);
     }
     let bytes = std::fs::read(&args[2]).expect("read input file");

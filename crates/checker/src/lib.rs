@@ -11,6 +11,7 @@ pub enum Format {
     Prose,
     Productions,
     DfaTransitions,
+    StatePairs { allow_empty: bool },
     PngFilename,
 }
 
@@ -93,8 +94,27 @@ pub struct AnswerLine<'a> {
     pub number: usize,
 }
 
-fn is_comment(text: &str) -> bool {
-    text.trim_start().starts_with('#')
+fn is_comment(text: &str, prefix: &str) -> bool {
+    text.trim_start().starts_with(prefix)
+}
+
+pub(crate) fn parse_state_pair(value: &str) -> Option<(&str, &str)> {
+    let inner = value.strip_prefix('(')?.strip_suffix(')')?;
+    let (left, right) = inner.split_once(',')?;
+    let valid = |state: &str| {
+        !state.is_empty()
+            && !state
+                .chars()
+                .any(|c| c.is_whitespace() || matches!(c, ',' | '(' | ')' | '{' | '}' | '[' | ']'))
+    };
+    (valid(left) && valid(right)).then_some((left, right))
+}
+
+pub(crate) fn normalize_state_pair(value: &str) -> String {
+    match parse_state_pair(value) {
+        Some((left, right)) if left > right => format!("({right},{left})"),
+        _ => value.to_string(),
+    }
 }
 
 /// Assignment 04 uses '#' and '#AB' as states. Before any answer in a
@@ -127,7 +147,7 @@ fn looks_like_marker(text: &str) -> bool {
 /// Inspect bytes, never replace invalid UTF-8 with replacement characters.
 /// Hash v1 is UTF-8 without BOM, LF, exact template markers and one blank line
 /// between sections, exactly one final LF. Only recognized answer sections
-/// enter the hash. Header values and whole-line # comments never enter it.
+/// enter the hash. Header values and assignment-specific comments never enter it.
 /// A '#' state in an opted-in final-state list is answer text, not a comment.
 pub fn check(assignment_id: &str, bytes: &[u8]) -> Report {
     use Severity::*;
@@ -237,13 +257,16 @@ pub fn check(assignment_id: &str, bytes: &[u8]) -> Report {
             && active.is_some_and(|index| {
                 assignment.sections[index].format == Format::DfaTransitions && !has_answer[index]
             });
-        if is_comment(line) && !hash_final {
+        if is_comment(line, assignment.comment_prefix) && !hash_final {
             comment_count += 1;
             r.issue(
                 Warning,
                 "comment",
                 Some(number),
-                "# で始まるコメントが残っています。修正案とハッシュ対象から除きます。",
+                format!(
+                    "{} で始まるコメントが残っています。修正案とハッシュ対象から除きます。",
+                    assignment.comment_prefix
+                ),
             );
             continue;
         }
@@ -329,6 +352,7 @@ pub fn check(assignment_id: &str, bytes: &[u8]) -> Report {
     let mut trimmed = false;
     let mut removed_blanks = false;
     let mut sorted = false;
+    let mut sorted_pairs = false;
     for (index, spec) in assignment.sections.iter().enumerate() {
         if !seen[index] {
             r.issue(
@@ -351,7 +375,7 @@ pub fn check(assignment_id: &str, bytes: &[u8]) -> Report {
             .iter()
             .filter(|row| !row.text.trim().is_empty())
             .collect();
-        if nonempty.is_empty() {
+        if nonempty.is_empty() && spec.format != (Format::StatePairs { allow_empty: true }) {
             r.issue(
                 Error,
                 "unanswered",
@@ -395,7 +419,10 @@ pub fn check(assignment_id: &str, bytes: &[u8]) -> Report {
             if value.is_empty()
                 && (matches!(
                     spec.format,
-                    Format::Compact | Format::Productions | Format::PngFilename
+                    Format::Compact
+                        | Format::Productions
+                        | Format::PngFilename
+                        | Format::StatePairs { .. }
                 ) || (spec.format == Format::DfaTransitions && normalized_rows.len() > 1))
             {
                 removed_blanks = true;
@@ -414,7 +441,20 @@ pub fn check(assignment_id: &str, bytes: &[u8]) -> Report {
             normalized_rows.sort_unstable(); // Rust string order = ASCII byte order here, no locale collation.
             sorted |= normalized_rows != before;
         }
-        let body = if spec.format == Format::DfaTransitions && !normalized_rows.is_empty() {
+        let body = if matches!(spec.format, Format::StatePairs { .. }) {
+            let mut pairs: Vec<_> = normalized_rows
+                .iter()
+                .map(|value| normalize_state_pair(value))
+                .collect();
+            sorted_pairs |= pairs
+                .iter()
+                .map(String::as_str)
+                .ne(normalized_rows.iter().copied());
+            let before = pairs.clone();
+            pairs.sort_unstable();
+            sorted_pairs |= pairs != before;
+            pairs.join("\n")
+        } else if spec.format == Format::DfaTransitions && !normalized_rows.is_empty() {
             let mut finals: Vec<_> = normalized_rows[0].split(',').collect();
             let before_finals = finals.clone();
             finals.sort_unstable();
@@ -443,7 +483,11 @@ pub fn check(assignment_id: &str, bytes: &[u8]) -> Report {
         });
     }
     if comment_count > 0 {
-        r.changes.push("# で始まるコメント行を削除");
+        r.changes.push(if assignment.comment_prefix == "#" {
+            "# で始まるコメント行を削除"
+        } else {
+            "%%% で始まるコメント行を削除"
+        });
     }
     if trimmed {
         r.changes
@@ -455,6 +499,10 @@ pub fn check(assignment_id: &str, bytes: &[u8]) -> Report {
     if sorted {
         r.changes
             .push("生成規則・最終状態・遷移を ASCII の辞書順に並べ替え（導出の順序は保持）");
+    }
+    if sorted_pairs {
+        r.changes
+            .push("状態の組の左右と各行を ASCII の辞書順に並べ替え（重複は保持）");
     }
     if unambiguous {
         let hash_input = format!("{}\n", blocks.join("\n\n"));
@@ -522,7 +570,7 @@ fn check_row(r: &mut Report, spec: &Section, row: &AnswerLine<'_>) {
     }
     if matches!(
         spec.format,
-        Format::Compact | Format::Productions | Format::DfaTransitions
+        Format::Compact | Format::Productions | Format::DfaTransitions | Format::StatePairs { .. }
     ) && edge_trim(row.text).contains(' ')
     {
         r.issue(

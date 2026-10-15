@@ -4,6 +4,8 @@ const A01: &str = "学籍番号: 00X00000\n氏名: ダミー\n\n1-1=====\nx,y\n=
 const A02: &str = "学籍番号: 00X00000\n氏名: ダミー\n\n2-1.1===\nA->x\nS->$\n========\n\n2-1.2===\nB->y\nS->zB\n========\n\n2-2=====\nC->z\nS->zC\n========\n";
 const A03: &str = "学籍番号: 00X00000\n氏名: ダミー\n\n3-1===\nA\n\n(S,x,A)\n========\n\n3-2=====\nB\n\n(S,y,B)\n========\n\n3-3=====\ndiagram.png\n========\n";
 const A04: &str = "学籍番号: 00X00000\n氏名: ダミー\n\n4-1=====\n#,A\n\n(#,x,A)\n(A,x,#)\n(S,x,A)\n========\n\n4-2=====\n#A,#AB\n\n(#A,x,#AB)\n(AB,y,#A)\n(S,x,AB)\n========\n\n4-3=====\nA->$\nA->xA\nA->yB\nB->xA\nB->yB\nS->xA\nS->yB\n========\n";
+const A05: &str = "学籍番号: 00X00000\n氏名: ダミー\n\n5-1=====\nq3,r4\n\n(q0,$,r0)\n(q0,x,q1)\n(r0,y,r4)\n========\n\n5-2=====\nq0q2r1,r4\n\n(q0,x,q0q2r1)\n(q0q2r1,y,r4)\n(r4,x,r4)\n========\n";
+const A06: &str = "学籍番号: 00X00000\n氏名: ダミー\n\n6-1.1=====\nB,Z\n\n(A,x,B)\n(B,y,Z)\n(Z,x,Z)\n========\n\n6-1.2=====\n(A,B)\n(A,Z)\n(B,Z)\n========\n\n6-1.3=====\nq2\n\n(q1,x,q2)\n(q2,y,q1)\n========\n";
 
 fn has(input: &str, id: &str, code: &str) -> bool {
     check(id, input.as_bytes())
@@ -14,7 +16,14 @@ fn has(input: &str, id: &str, code: &str) -> bool {
 
 #[test]
 fn dummy_answers_are_not_graded() {
-    for (id, input) in [("01", A01), ("02", A02), ("03", A03), ("04", A04)] {
+    for (id, input) in [
+        ("01", A01),
+        ("02", A02),
+        ("03", A03),
+        ("04", A04),
+        ("05", A05),
+        ("06", A06),
+    ] {
         let r = check(id, input.as_bytes());
         assert_eq!(r.errors(), 0, "{id}: {:?}", r.issues);
         assert!(r.hash.is_some());
@@ -247,6 +256,292 @@ fn adding_assignment_04_keeps_previous_hashes_fixed() {
             Some(digest)
         );
     }
+}
+
+#[test]
+fn adding_assignments_05_and_06_keeps_assignment_04_and_old_percent_text() {
+    assert_eq!(
+        check("04", A04.as_bytes()).hash.as_deref(),
+        Some("84d4362c7e8c218f67605b8f1cdeca6cd80eb9998340fe94e9e6611f9bf71daf")
+    );
+    let original_percent = A01.replace("x,y", "%%% retained answer text\nx,y");
+    let r = check("01", original_percent.as_bytes());
+    assert_eq!(r.errors(), 0);
+    assert!(r.hash_input.unwrap().contains("%%% retained answer text"));
+    assert_ne!(r.hash, check("01", A01.as_bytes()).hash);
+    assert!(
+        check("04", format!("%%% outside\n{A04}").as_bytes())
+            .hash
+            .is_none()
+    );
+}
+
+#[test]
+fn new_percent_instructions_and_private_headers_never_enter_hashes() {
+    for (id, input) in [("05", A05), ("06", A06)] {
+        let mut edited = input
+            .replace("00X00000", "99Z99999")
+            .replace("ダミー", "別の名前");
+        for spec in answer_checker::assignments::get(id).unwrap().sections {
+            edited = edited.replace(
+                spec.marker,
+                &format!("%%%% 設問の指示\n{}\n\t%%% 注意書き", spec.marker),
+            );
+        }
+        let expected = check(id, input.as_bytes());
+        for text in [
+            edited.clone(),
+            edited.replace('\n', "\r\n"),
+            edited.replace('\n', "\r"),
+        ] {
+            let r = check(id, format!("\u{feff}{text}\n\n").as_bytes());
+            assert_eq!(r.errors(), 0, "{id}: {:?}", r.issues);
+            assert_eq!(r.hash, expected.hash);
+            assert_eq!(r.hash_input, expected.hash_input);
+            let normalized = r.normalized.as_ref().unwrap();
+            assert!(!normalized.contains("%%%"));
+            let again = check(id, normalized.as_bytes());
+            assert_eq!(again.normalized, r.normalized);
+            assert_eq!(again.hash, r.hash);
+            assert_eq!(again.errors(), 0);
+        }
+    }
+    // Only the specified whole-line prefix is removed in the new templates.
+    let hash_state = A05.replace("q3,r4", "#");
+    assert_eq!(check("05", hash_state.as_bytes()).errors(), 0);
+    assert!(
+        check("05", hash_state.as_bytes())
+            .hash_input
+            .unwrap()
+            .contains("5-1=====\n#\n")
+    );
+    let symbol = A05.replace("(q0,x,q1)", "(q0,%%%,q1)");
+    assert_eq!(check("05", symbol.as_bytes()).errors(), 0);
+    assert!(
+        check("05", symbol.as_bytes())
+            .hash_input
+            .unwrap()
+            .contains("(q0,%%%,q1)")
+    );
+    assert!(
+        check("05", format!("%% not a comment\n{A05}").as_bytes())
+            .hash
+            .is_none()
+    );
+}
+
+#[test]
+fn assignment_05_uses_whole_state_names_for_subset_order() {
+    for replacement in ["q2q0r1", "r1q0q2"] {
+        let input = A05.replace("q0q2r1", replacement);
+        let r = check("05", input.as_bytes());
+        assert!(
+            r.issues
+                .iter()
+                .any(|issue| issue.code == "subset-label-sort")
+        );
+        assert_eq!(r.normalized.as_deref(), Some(input.as_str()));
+    }
+    // Checking is limited to labels whose token boundaries are specified.
+    for label in ["S", "addedState", "r1q0S", "q10", "q0q0r4"] {
+        let input = A05.replace("q0q2r1", label);
+        assert!(!has(&input, "05", "subset-label-sort"), "{label}");
+        assert!(
+            check("05", input.as_bytes())
+                .normalized
+                .unwrap()
+                .contains(label)
+        );
+    }
+    let input_symbol = A05.replace("(q0,x,q0q2r1)", "(q0,r1q0,q0q2r1)");
+    assert_eq!(check("05", input_symbol.as_bytes()).errors(), 0);
+    // No subset-label convention is imposed on the epsilon-NFA in 5-1.
+    assert!(!has(
+        &A05.replace("q3,r4", "r1q0"),
+        "05",
+        "subset-label-sort"
+    ));
+}
+
+#[test]
+fn assignment_05_checks_epsilon_spelling_and_sorts_independent_lists() {
+    for symbol in ["ε", "ϵ", "$x", "x$", "$$"] {
+        let input = A05.replace("(q0,$,r0)", &format!("(q0,{symbol},r0)"));
+        assert!(has(&input, "05", "epsilon-notation"));
+        assert!(
+            check("05", input.as_bytes())
+                .normalized
+                .unwrap()
+                .contains(symbol)
+        );
+    }
+    let input = A05
+        .replace("q3,r4", "r4,q3")
+        .replace("q0q2r1,r4", "r4,q0q2r1")
+        .replace(
+            "(q0,$,r0)\n(q0,x,q1)\n(r0,y,r4)",
+            "(r0,y,r4)\n(q0,x,q1)\n(q0,$,r0)",
+        )
+        .replace(
+            "(q0,x,q0q2r1)\n(q0q2r1,y,r4)\n(r4,x,r4)",
+            "(r4,x,r4)\n(q0q2r1,y,r4)\n(q0,x,q0q2r1)",
+        );
+    let r = check("05", input.as_bytes());
+    assert!(
+        r.issues
+            .iter()
+            .any(|issue| issue.code == "final-state-sort")
+    );
+    assert!(r.issues.iter().any(|issue| issue.code == "sort"));
+    assert_eq!(r.normalized.as_deref(), Some(A05));
+    assert_eq!(r.hash, check("05", A05.as_bytes()).hash);
+}
+
+#[test]
+fn assignment_06_pairs_normalize_sides_then_rows_without_deduplication() {
+    let input = A06.replace("(A,B)\n(A,Z)\n(B,Z)", " (Z,B) \n\n(B,A)\n(Z,A)");
+    let r = check("06", input.as_bytes());
+    assert!(r.issues.iter().any(|issue| issue.code == "pair-order"));
+    assert!(r.issues.iter().any(|issue| issue.code == "pair-sort"));
+    assert_eq!(r.normalized.as_deref(), Some(A06));
+    assert_eq!(r.hash, check("06", A06.as_bytes()).hash);
+    let again = check("06", r.normalized.unwrap().as_bytes());
+    assert_eq!(again.normalized.as_deref(), Some(A06));
+    assert_eq!(again.hash, r.hash);
+    assert_eq!(again.errors(), 0);
+
+    let duplicate = A06.replace("(A,B)", "(B,A)\n(A,B)");
+    let r = check("06", duplicate.as_bytes());
+    assert!(r.issues.iter().any(|issue| issue.code == "duplicate-pair"));
+    let normalized = r.normalized.unwrap();
+    assert_eq!(normalized.matches("(A,B)").count(), 2);
+    assert_eq!(check("06", normalized.as_bytes()).hash, r.hash);
+
+    let lexical = A06.replace("(A,B)\n(A,Z)\n(B,Z)", "(q2,q10)");
+    assert!(
+        check("06", lexical.as_bytes())
+            .normalized
+            .unwrap()
+            .contains("6-1.2=====\n(q10,q2)\n")
+    );
+}
+
+#[test]
+fn assignment_06_pairs_check_shape_without_deciding_membership() {
+    for pair in [
+        "A,B",
+        "(A,)",
+        "(,B)",
+        "(A,B,C)",
+        "((A,B))",
+        "{A,B}",
+        "(A, B)",
+        "(A,B)(C,D)",
+    ] {
+        let input = A06.replace("(A,B)", pair);
+        assert!(has(&input, "06", "state-pair"), "{pair}");
+        assert!(
+            check("06", input.as_bytes())
+                .hash_input
+                .unwrap()
+                .contains(pair)
+        );
+    }
+    for pair in ["(A,A)", "(notInGraph,otherState)"] {
+        let input = A06.replace("(A,B)\n(A,Z)\n(B,Z)", pair);
+        assert_eq!(check("06", input.as_bytes()).errors(), 0, "{pair}");
+    }
+}
+
+#[test]
+fn assignment_06_empty_pair_list_is_allowed_and_has_canonical_hash() {
+    let input = A06.replace("(A,B)\n(A,Z)\n(B,Z)\n", "");
+    let r = check("06", input.as_bytes());
+    assert_eq!(r.errors(), 0);
+    assert_eq!(r.normalized.as_deref(), Some(input.as_str()));
+    assert!(
+        r.hash_input
+            .as_ref()
+            .unwrap()
+            .contains("6-1.2=====\n========\n")
+    );
+    assert_eq!(check("06", r.normalized.unwrap().as_bytes()).hash, r.hash);
+    let comments = input.replace("6-1.2=====\n", "6-1.2=====\n\n%%% 0件の組\n\n");
+    assert_eq!(check("06", comments.as_bytes()).errors(), 0);
+    assert_eq!(check("06", comments.as_bytes()).hash, r.hash);
+    // Only this list section permits an empty answer; automaton sections do not.
+    let missing_automaton =
+        input.replace("6-1.3=====\nq2\n\n(q1,x,q2)\n(q2,y,q1)\n", "6-1.3=====\n");
+    assert!(has(&missing_automaton, "06", "unanswered"));
+}
+
+#[test]
+fn assignment_06_checks_numbered_labels_but_never_reassigns_classes() {
+    for label in ["q0", "q02", "Q2", "q-2", "A", "q", "q2x"] {
+        let input = A06.replace("q2", label);
+        assert!(has(&input, "06", "numbered-state"), "{label}");
+        assert!(
+            check("06", input.as_bytes())
+                .normalized
+                .unwrap()
+                .contains(label)
+        );
+    }
+    assert!(has(
+        &A06.replace("q2", "q3"),
+        "06",
+        "numbered-state-sequence"
+    ));
+    assert!(has(
+        &A06.replace("q2", "q184467440737095516160000"),
+        "06",
+        "numbered-state-sequence"
+    ));
+    let states: Vec<_> = (1..=10).map(|i| format!("q{i}")).collect();
+    let mut sorted = states.clone();
+    sorted.sort_unstable();
+    let transitions = sorted
+        .iter()
+        .map(|state| format!("({state},x,{state})"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let replacement = format!("6-1.3=====\n{}\n\n{transitions}\n", sorted.join(","));
+    let input = A06.replace("6-1.3=====\nq2\n\n(q1,x,q2)\n(q2,y,q1)\n", &replacement);
+    assert_eq!(check("06", input.as_bytes()).errors(), 0);
+    let numeric_order = input.replace(&sorted.join(","), &states.join(","));
+    assert!(has(&numeric_order, "06", "final-state-sort"));
+    assert_eq!(
+        check("06", numeric_order.as_bytes()).normalized.as_deref(),
+        Some(input.as_str())
+    );
+}
+
+#[test]
+fn new_assignments_reject_malformed_markers_and_triples() {
+    for (id, input, marker) in [("05", A05, "5-1====="), ("06", A06, "6-1.1=====")] {
+        assert!(
+            check(id, input.replace(marker, &format!("{marker} ")).as_bytes())
+                .hash
+                .is_none()
+        );
+        assert!(
+            check(id, input.replace(marker, "99-1=====").as_bytes())
+                .hash
+                .is_none()
+        );
+    }
+    assert!(has(
+        &A05.replace("(q0,x,q1)", "(q0,,q1)"),
+        "05",
+        "transition"
+    ));
+    assert!(has(
+        &A06.replace("(A,x,B)", "(A,x,B,C)"),
+        "06",
+        "transition"
+    ));
+    assert!(check("05", A06.as_bytes()).hash.is_none());
+    assert!(check("06", A05.as_bytes()).hash.is_none());
 }
 
 #[test]

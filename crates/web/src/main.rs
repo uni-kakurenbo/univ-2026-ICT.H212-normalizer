@@ -70,7 +70,7 @@ fn App() -> Html {
     let input = use_state(String::new);
     let bytes = use_state(Vec::<u8>::new);
     let origin = use_state(|| "貼り付け".to_string());
-    let checked = use_state(|| false);
+    let has_document = use_state(|| false);
     let loading = use_state(|| false);
     let load_error = use_state(String::new);
     let revision = use_mut_ref(|| 0u64);
@@ -86,7 +86,7 @@ fn App() -> Html {
         let input = input.clone();
         let bytes = bytes.clone();
         let origin = origin.clone();
-        let checked = checked.clone();
+        let has_document = has_document.clone();
         let revision = revision.clone();
         let loading = loading.clone();
         let load_error = load_error.clone();
@@ -96,7 +96,7 @@ fn App() -> Html {
             bytes.set(value.as_bytes().to_vec());
             input.set(value);
             origin.set("貼り付け・編集".into());
-            checked.set(false);
+            has_document.set(true);
             loading.set(false);
             load_error.set(String::new());
         })
@@ -105,7 +105,7 @@ fn App() -> Html {
         let input = input.clone();
         let bytes = bytes.clone();
         let origin = origin.clone();
-        let checked = checked.clone();
+        let has_document = has_document.clone();
         let loading = loading.clone();
         let load_error = load_error.clone();
         let revision = revision.clone();
@@ -117,17 +117,18 @@ fn App() -> Html {
             element.set_value(""); // Permit choosing the same file after saving it again.
             *revision.borrow_mut() += 1;
             let request = *revision.borrow();
+            has_document.set(false);
             if file.size() > MAX_BYTES as f64 {
+                loading.set(false);
                 load_error.set("ファイルは 1 MiB 以下にしてください。".into());
                 return;
             }
             loading.set(true);
-            checked.set(false);
             load_error.set(String::new());
             let input = input.clone();
             let bytes = bytes.clone();
             let origin = origin.clone();
-            let checked = checked.clone();
+            let has_document = has_document.clone();
             let loading = loading.clone();
             let load_error = load_error.clone();
             let revision = revision.clone();
@@ -150,7 +151,7 @@ fn App() -> Html {
                         );
                         bytes.set(raw);
                         origin.set(format!("ファイル：{name}"));
-                        checked.set(true);
+                        has_document.set(true);
                     }
                     Err(_) => {
                         load_error.set(
@@ -169,14 +170,10 @@ fn App() -> Html {
             }
         })
     };
-    let inspect = {
-        let checked = checked.clone();
-        Callback::from(move |_| checked.set(true))
-    };
     let clear = {
         let input = input.clone();
         let bytes = bytes.clone();
-        let checked = checked.clone();
+        let has_document = has_document.clone();
         let origin = origin.clone();
         let revision = revision.clone();
         let loading = loading.clone();
@@ -185,7 +182,7 @@ fn App() -> Html {
             *revision.borrow_mut() += 1;
             input.set(String::new());
             bytes.set(Vec::new());
-            checked.set(false);
+            has_document.set(false);
             origin.set("貼り付け".into());
             loading.set(false);
             load_error.set(String::new());
@@ -201,12 +198,14 @@ fn App() -> Html {
         let input = input.clone();
         let bytes = bytes.clone();
         let origin = origin.clone();
-        let checked = checked.clone();
+        let has_document = has_document.clone();
+        let revision = revision.clone();
         Callback::from(move |_| {
+            *revision.borrow_mut() += 1;
             bytes.set(value.as_bytes().to_vec());
             input.set(value.clone());
-            origin.set("修正案を再検査".into());
-            checked.set(true);
+            origin.set("修正案を反映".into());
+            has_document.set(true);
         })
     };
     let errors = report.errors();
@@ -233,12 +232,12 @@ fn App() -> Html {
                     <div class="input-meta"><span>{if *loading { "読み込み中…" } else { &*origin }}</span><span>{format!("{} bytes", bytes.len())}</span></div>
                     <p id="input-help" class="help">{"元ファイルの文字コード・改行を調べるには .txt を読み込んでください。貼り付け後は元の保存形式を判定できません。"}</p>
                     if !load_error.is_empty() { <p class="load-error" role="alert">{&*load_error}</p> }
-                    <div class="actions"><button class="button primary" onclick={inspect} disabled={*loading}>{"形式をチェック"}</button><button class="text-button" onclick={clear}>{"クリア"}</button></div>
+                    <div class="actions"><span class="help">{"変更すると自動で検査します"}</span><button class="text-button" onclick={clear}>{"クリア"}</button></div>
                 </div>
                 <div class="result-pane">
                     <div class="section-label"><span class="step">{"02"}</span><h2>{"検査結果"}</h2></div>
-                    if !*checked {
-                        <div class="empty-result"><span class="empty-symbol" aria-hidden="true">{"{ }"}</span><h3>{"解答を入力して検査"}</h3><p>{"区切り、文字、空白、改行を確認し、問題のある行を表示します。"}</p></div>
+                    if !*has_document {
+                        <div class="empty-result"><span class="empty-symbol" aria-hidden="true">{"{ }"}</span><h3>{if *loading { "ファイルを読み込み中…" } else { "解答を入力してください" }}</h3><p>{"入力・編集や課題の変更に合わせて、検査結果を自動更新します。"}</p></div>
                     } else {
                         <div class={classes!("result-summary", if errors > 0 { "has-errors" } else if warnings > 0 { "has-warnings" } else { "is-valid" })} role="status">
                             <h3>{if errors > 0 { "修正が必要な形式があります" } else if warnings > 0 { "形式エラーなし・確認事項あり" } else { "検査対象の形式に問題はありません" }}</h3>
@@ -253,7 +252,7 @@ fn App() -> Html {
                     }
                 </div>
             </section>
-            if *checked {
+            if *has_document {
                 <section class="output-section" aria-label="修正案とハッシュ">
                     <div class="preview-pane"><div class="section-label"><span class="step">{"03"}</span><h2>{"修正プレビュー"}</h2></div>
                     if let Some(normalized) = &report.normalized {
@@ -261,7 +260,7 @@ fn App() -> Html {
                         <ul class="changes">{for report.changes.iter().map(|change| html! { <li>{change}</li> })}<li>{"欄間は空行1つ、末尾は LF 1つ"}</li></ul>
                         <textarea class="preview-text" aria-label="修正後の解答テキスト" readonly=true value={normalized.clone()} spellcheck="false" />
                         <p class="help">{format!("修正案に残っている形式エラー：{preview_errors} 件")}</p>
-                        <div class="preview-actions"><CopyButton key={normalized.clone()} text={normalized.clone()} label="修正案をコピー" /><DownloadLink text={normalized.clone()} filename={format!("{}_answer-sheet-normalized.txt", *assignment)} /><button class="text-button" onclick={apply_preview}>{"修正案を再検査"}</button></div>
+                        <div class="preview-actions"><CopyButton key={normalized.clone()} text={normalized.clone()} label="修正案をコピー" /><DownloadLink text={normalized.clone()} filename={format!("{}_answer-sheet-normalized.txt", *assignment)} /><button class="text-button" onclick={apply_preview}>{"修正案を入力に反映"}</button></div>
                         <p class="help">{"コピー後の保存設定で文字コード・改行が変わることがあります。提出直前の .txt を再読込して確認できます。"}</p>
                     } else { <p class="blocked-output">{"解答欄を確定できません。文字コード・設問・区切りのエラーを先に修正してください。"}</p> }
                     </div>
@@ -271,7 +270,7 @@ fn App() -> Html {
                         <label class="field-label" for="hash">{"ハッシュ値"}</label><textarea id="hash" class="hash-value" readonly=true value={hash.clone()} rows="3" spellcheck="false" />
                         <CopyButton key={hash.clone()} text={hash.clone()} label="SHA-256 をコピー" />
                         <div class="hash-format"><span>{HASH_VERSION}</span><span>{"UTF-8 / LF / BOM なし"}</span><span>{format!("{} bytes · 末尾 LF 1つ", hash_input.len())}</span></div>
-                        if preview_errors > 0 { <p class="hash-caution">{"形式エラーが残っている修正案のハッシュです。必要な修正を済ませて再検査してください。"}</p> }
+                        if preview_errors > 0 { <p class="hash-caution">{"形式エラーが残っている修正案のハッシュです。必要な修正を入力に反映してください。"}</p> }
                         <details class="hash-details"><summary>{"ハッシュ対象のテキストを確認"}</summary><textarea class="preview-text" readonly=true value={hash_input.clone()} aria-label="ハッシュ計算対象" spellcheck="false" /><CopyButton key={hash_input.clone()} text={hash_input.clone()} label="ハッシュ対象をコピー" /></details>
                     } else { <p class="blocked-output">{"解答欄を確定できるまで、ハッシュを計算しません。"}</p> }
                     </div>

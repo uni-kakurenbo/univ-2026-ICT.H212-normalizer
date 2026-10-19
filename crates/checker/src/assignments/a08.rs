@@ -21,7 +21,8 @@ mod paths;
 // calculation checks: anonymous bottom-up rules, lf, K/Delta updates, and the
 // top-down graph. No solved assignment is stored or displayed; no general
 // language-equivalence oracle is used.
-// No ordering of lf rows/set members is specified: preserve them and step order.
+// The user recommends ASCII ordering of lf rows and their pairs: warn only.
+// Preserve input, normalized output, duplicates and numeric iteration order.
 pub const ASSIGNMENT: Assignment = Assignment {
     id: "08",
     title: "演習08：正規表現とオートマトン",
@@ -246,18 +247,37 @@ fn check_derivation(r: &mut Report, rows: &[&AnswerLine<'_>]) {
     let mut forms = 0;
     let mut stages = 0;
     let mut stage_started = false;
+    let mut previous_form: Option<&str> = None;
     for row in rows {
         let value = edge_trim(row.text);
         if value.starts_with("lf(") {
             forms += 1;
             if !linear_form(value) {
                 r.issue(Severity::Error, "linear-form", Some(row.number), "linear form は lf(p)={<x,q>,<y,r>} の形で1行に1つ記載してください。空集合は lf(p)={}、組の括弧は半角 < > です。正規表現中の空列のみの言語は 1 と書きます。");
+                previous_form = None;
+            } else {
+                if previous_form.is_some_and(|previous| previous > value) {
+                    r.issue(Severity::Warning, "linear-form-line-order", Some(row.number), "lf(p) の行が ASCII の辞書順ではありません。行全体で比較しています。入力・修正案の記載順は保持します。");
+                }
+                previous_form = Some(value);
+                let (_, body) = value.split_once("={").expect("validated linear form");
+                let body = body.strip_suffix('}').expect("validated linear form");
+                let mut previous_pair: Option<&str> = None;
+                for pair in body.split_inclusive(">,") {
+                    let pair = pair.strip_suffix(',').unwrap_or(pair);
+                    if previous_pair.is_some_and(|previous| previous > pair) {
+                        r.issue(Severity::Warning, "linear-form-pair-order", Some(row.number), "linear form 内の組が ASCII の辞書順ではありません。<記号,正規表現> 全体で比較しています。入力・修正案の列挙順は保持します。");
+                        break;
+                    }
+                    previous_pair = Some(pair);
+                }
             }
             if stage_started {
                 r.issue(Severity::Error, "derivation-order", Some(row.number), "lf(p) の行を先に記載し、その後に i=0 からの各段階を続けてください。導出の行は自動で並べ替えません。");
             }
         } else if value.starts_with("i=") {
             stage_started = true;
+            previous_form = None;
             match stage(value) {
                 None => r.issue(Severity::Error, "derivation-stage", Some(row.number), "各段階は i=0,K={...},Delta={...} の形で1行に1段階記載してください。空集合は {}、Delta は ASCII で書きます。"),
                 Some(index) if index != stages.to_string() => r.issue(Severity::Error, "stage-index", Some(row.number), "反復の段階番号は0から1ずつ増やして記載してください。段階の行は自動で並べ替えません。"),

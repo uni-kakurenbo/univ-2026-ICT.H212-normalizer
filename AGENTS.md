@@ -30,6 +30,7 @@ When re-spawning:
 - Do not invent rules when material is ambiguous. Assignment 03 uses `(source,symbol,target)` from the supplementary slide and comma-separated final states confirmed by the user. Check syntax, not which states or symbols are correct. Keep `#` inside triples.
 - Reuse common checks, but preserve assignment-specific exceptions: Japanese prose in 1-2 and derivation order in 1-3. Sort production lines, comma-separated final states, and transition lines independently. Final-state sorting is the user's explicit requirement.
 - Hash canonicalization `answer-text-v1` is fixed. Protect existing hashes and normalization idempotence when extending validators.
+- Assignment 08: user-recommended ASCII ordering of whole `lf(p)=...` lines and whole `<symbol,regex>` pairs is warning-only. Never sort these in normalization/hashing, remove duplicates, or apply this preference to iteration steps or K/Delta members.
 - Never transmit or persist answer input. Do not add analytics, CDN assets, backend calls, or LLM APIs to the browser tool.
 - Use synthetic answers and dummy identity values for tests. Do not commit provided filled answers or lecture PDFs.
 - Required checks: `cargo fmt --all -- --check`, `cargo test --locked -p answer-checker`, `cargo clippy --locked --workspace --target wasm32-unknown-unknown -- -D warnings`, `trunk build --release --locked`.

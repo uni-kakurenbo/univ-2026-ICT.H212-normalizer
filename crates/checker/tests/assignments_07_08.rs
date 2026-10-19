@@ -39,7 +39,12 @@ fn synthetic_fixtures_keep_format_and_hash_with_independent_mechanical_diagnosti
         }
         // The old x/y fixture is rejected by the new alphabet check, while
         // its original formatting and canonical output remain unchanged.
-        assert_eq!(r.warnings(), 0, "{id}: {:?}", r.issues);
+        assert_eq!(
+            r.warnings(),
+            if id == "08" { 2 } else { 0 },
+            "{id}: {:?}",
+            r.issues
+        );
         assert_eq!(r.normalized.as_deref(), Some(input));
         assert!(r.hash.is_some());
     }
@@ -266,6 +271,71 @@ fn linear_forms_and_stage_members_keep_their_input_order_and_duplicates() {
             .count(),
         2
     );
+}
+
+#[test]
+fn linear_form_row_and_pair_order_are_warnings_without_reordering_or_hash_changes() {
+    let sorted = "lf(1)={}\nlf(a+b)={<a,1>,<b,1>}\ni=0,K={},Delta={e}";
+    let base = A08.replace(FORMS, sorted);
+    let base_hash = check("08", base.as_bytes()).hash;
+    for (forms, code, bad_line) in [
+        (sorted, None, ""),
+        (
+            "lf(a+b)={<a,1>,<b,1>}\nlf(1)={}\ni=0,K={},Delta={e}",
+            Some("linear-form-line-order"),
+            "lf(1)={}",
+        ),
+        (
+            "lf(1)={}\nlf(a+b)={<b,1>,<a,1>}\ni=0,K={},Delta={e}",
+            Some("linear-form-pair-order"),
+            "lf(a+b)={<b,1>,<a,1>}",
+        ),
+    ] {
+        let text = A08.replace(FORMS, forms);
+        let r = check("08", text.as_bytes());
+        let ordering: Vec<_> = r
+            .issues
+            .iter()
+            .filter(|i| matches!(i.code, "linear-form-line-order" | "linear-form-pair-order"))
+            .collect();
+        assert_eq!(ordering.len(), usize::from(code.is_some()));
+        if let Some(code) = code {
+            assert_eq!(ordering[0].code, code);
+            assert_eq!(ordering[0].severity, Severity::Warning);
+            assert_eq!(
+                ordering[0].line,
+                text.lines()
+                    .position(|line| line == bad_line)
+                    .map(|i| i + 1)
+            );
+            assert_ne!(
+                r.hash, base_hash,
+                "Warning must not canonicalize the original order"
+            );
+        }
+        assert_eq!(r.normalized.as_deref(), Some(text.as_str()));
+        let again = check("08", r.normalized.as_ref().unwrap().as_bytes());
+        assert_eq!(again.normalized, r.normalized);
+        assert_eq!(again.hash, r.hash);
+    }
+}
+
+#[test]
+fn linear_form_order_uses_whole_ascii_tuples_and_skips_invalid_syntax_and_steps() {
+    for (line, warn) in [
+        ("lf(a)={<a,a*>,<a,a>}", false),
+        ("lf(a)={<a,a>,<a,a*>}", true),
+        ("lf(a)={}", false),
+        ("lf(a)={<a,1>}", false),
+        ("lf(a)={<a,1>,<a,1>}", false),
+        ("lf(a)={<b,1>,<a,>}", false),
+    ] {
+        let text = A08.replace(FORMS, &format!("{line}\ni=0,K={{}},Delta={{e}}"));
+        assert_eq!(has("08", &text, "linear-form-pair-order"), warn, "{line}");
+    }
+    let text = A08.replace(FORMS,"lf(1)={}\nlf(1)={}\ni=0,K={},Delta={e}\ni=1,K={e,b,a},Delta={c,b}\ni=2,K={c,b,a,e},Delta={}");
+    assert!(!has("08", &text, "linear-form-line-order"));
+    assert!(!has("08", &text, "linear-form-pair-order"));
 }
 
 #[test]

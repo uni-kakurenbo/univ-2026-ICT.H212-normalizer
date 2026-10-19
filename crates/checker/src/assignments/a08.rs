@@ -2,6 +2,9 @@ use super::Assignment;
 use crate::{AnswerLine, Format, Report, Section, Severity, edge_trim};
 use std::collections::BTreeSet;
 
+mod construction;
+mod derivation;
+mod expressions;
 mod paths;
 
 // Sources: 08_answer-sheet.txt; autolang第8回.pdf pp.5, 7–12.
@@ -14,12 +17,15 @@ mod paths;
 // independently of numeric labels. Missing/multiple paths or search exhaustion
 // are warnings with the relevant conditions explicitly marked unchecked.
 // 8-1.2 labels are regexes with nested (), concatenation, +, *, constants 0/1
-// and alias e. Never compute lf, K/Delta membership, equivalence or correctness.
+// and alias e. The user additionally authorized mechanical construction and
+// calculation checks: anonymous bottom-up rules, lf, K/Delta updates, and the
+// top-down graph. No solved assignment is stored or displayed; no general
+// language-equivalence oracle is used.
 // No ordering of lf rows/set members is specified: preserve them and step order.
 pub const ASSIGNMENT: Assignment = Assignment {
     id: "08",
     title: "演習08：正規表現とオートマトン",
-    note: "オートマトン欄は出発状態、最終状態、三つ組の順。最終状態と遷移は文字の辞書順（11 は 2 より前）。8-1.1 は連続番号・最大番号の最終状態と、aac / bbc / cbaa の状態を再訪しない経路の番号条件を検査。8-1.2.1 は lf(p)={...} と i=0,K={...},Delta={...}。導出の順序は保持し、空白・タブはエラーです。",
+    note: "第8回は講義の構成・計算規則も検査します。8-1.1 は番号条件とボトムアップ構成（3項以上の和は一度に分岐・合流）、8-1.2 は lf・K/Delta の計算とトップダウン構成を検査。記号は a/b/c、εは $。最終状態と遷移は文字の辞書順（11 は 2 より前）。導出順は保持し、空白・タブはエラーです。",
     comment_prefix: "%%%",
     hash_prefixed_finals: false,
     sections: &[
@@ -100,10 +106,19 @@ fn check_numbered(r: &mut Report, rows: &[&AnswerLine<'_>]) {
             .any(|issue| issue.severity == Severity::Error && issue.code != "sort")
     {
         paths::check(r, rows);
+        construction::check(r, rows);
     }
 }
 fn check_regex_automaton(r: &mut Report, rows: &[&AnswerLine<'_>]) {
+    let before = r.issues.len();
     check_automaton(r, rows, false);
+    if rows.len() >= 2
+        && !r.issues[before..].iter().any(|i| {
+            i.severity == Severity::Error && !matches!(i.code, "sort" | "final-state-sort")
+        })
+    {
+        derivation::check_automaton(r, rows);
+    }
 }
 
 fn check_automaton(r: &mut Report, rows: &[&AnswerLine<'_>], numbered: bool) {
@@ -131,6 +146,14 @@ fn check_automaton(r: &mut Report, rows: &[&AnswerLine<'_>], numbered: bool) {
             states.extend([(source, row.number), (target, row.number)]);
             if !symbol(input) {
                 r.issue(Severity::Error, "transition", Some(row.number), "入力記号は ASCII の1記号（ε は $）で記載してください。三つ組は (出発状態,入力記号,到着状態) です。");
+            }
+            if symbol(input) && !matches!(input, "a" | "b" | "c" | "$") {
+                r.issue(
+                    Severity::Error,
+                    "mechanical-alphabet",
+                    Some(row.number),
+                    "演習08の入力記号は a・b・c（ε遷移は $）だけです。",
+                );
             }
             if input.contains(['ε', 'ϵ']) || (input.contains('$') && input != "$") {
                 r.issue(Severity::Error, "epsilon-notation", Some(row.number), "演習08の ε 遷移は入力記号の欄全体を $ として表してください。正規表現中の空列のみの言語は 1 です。");
@@ -219,6 +242,7 @@ fn stage(value: &str) -> Option<&str> {
 }
 
 fn check_derivation(r: &mut Report, rows: &[&AnswerLine<'_>]) {
+    let before = r.issues.len();
     let mut forms = 0;
     let mut stages = 0;
     let mut stage_started = false;
@@ -251,5 +275,12 @@ fn check_derivation(r: &mut Report, rows: &[&AnswerLine<'_>]) {
             None,
             "8-1.2.1 には linear form の行と反復の各段階の行を記載してください。",
         );
+    }
+    if !rows.is_empty()
+        && !r.issues[before..]
+            .iter()
+            .any(|i| i.severity == Severity::Error)
+    {
+        derivation::check_steps(r, rows);
     }
 }

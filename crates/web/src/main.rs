@@ -240,7 +240,7 @@ fn App() -> Html {
                         <div class="empty-result"><span class="empty-symbol" aria-hidden="true">{"{ }"}</span><h3>{if *loading { "ファイルを読み込み中…" } else { "解答を入力してください" }}</h3><p>{"入力・編集や課題の変更に合わせて、検査結果を自動更新します。"}</p></div>
                     } else {
                         <div class={classes!("result-summary", if errors > 0 { "has-errors" } else if warnings > 0 { "has-warnings" } else { "is-valid" })} role="status">
-                            <h3>{if errors > 0 { "修正が必要な形式があります" } else if warnings > 0 { "形式エラーなし・確認事項あり" } else { "検査対象の形式に問題はありません" }}</h3>
+                            <h3>{if errors > 0 { "入力に修正・確認が必要です" } else if warnings > 0 { "検査エラーなし・確認事項あり" } else { "検査した書式・規則に問題はありません" }}</h3>
                             <div class="counts"><span>{format!("エラー {errors}")}</span><span>{format!("注意 {warnings}")}</span></div>
                         </div>
                         <div class="file-facts"><span>{format!("LF {}", report.info.lf)}</span><span>{format!("CRLF {}", report.info.crlf)}</span><span>{format!("CR {}", report.info.cr)}</span><span>{if report.info.bom { "BOM あり" } else { "BOM なし" }}</span></div>
@@ -259,7 +259,7 @@ fn App() -> Html {
                         <p class="help">{"氏名・学籍番号を含む提出用テキストです。変更を確認してからコピーしてください。"}</p>
                         <ul class="changes">{for report.changes.iter().map(|change| html! { <li>{change}</li> })}<li>{"欄間は空行1つ、末尾は LF 1つ"}</li></ul>
                         <textarea class="preview-text" aria-label="修正後の解答テキスト" readonly=true value={normalized.clone()} spellcheck="false" />
-                        <p class="help">{format!("修正案に残っている形式エラー：{preview_errors} 件")}</p>
+                        <p class="help">{format!("修正案に残っているエラー：{preview_errors} 件")}</p>
                         <div class="preview-actions"><CopyButton key={normalized.clone()} text={normalized.clone()} label="修正案をコピー" /><DownloadLink text={normalized.clone()} filename={format!("{}_answer-sheet-normalized.txt", *assignment)} /><button class="text-button" onclick={apply_preview}>{"修正案を入力に反映"}</button></div>
                         <p class="help">{"コピー後の保存設定で文字コード・改行が変わることがあります。提出直前の .txt を再読込して確認できます。"}</p>
                     } else { <p class="blocked-output">{"解答欄を確定できません。文字コード・設問・区切りのエラーを先に修正してください。"}</p> }
@@ -270,7 +270,7 @@ fn App() -> Html {
                         <label class="field-label" for="hash">{"ハッシュ値"}</label><textarea id="hash" class="hash-value" readonly=true value={hash.clone()} rows="3" spellcheck="false" />
                         <CopyButton key={hash.clone()} text={hash.clone()} label="SHA-256 をコピー" />
                         <div class="hash-format"><span>{HASH_VERSION}</span><span>{"UTF-8 / LF / BOM なし"}</span><span>{format!("{} bytes · 末尾 LF 1つ", hash_input.len())}</span></div>
-                        if preview_errors > 0 { <p class="hash-caution">{"形式エラーが残っている修正案のハッシュです。必要な修正を入力に反映してください。"}</p> }
+                        if preview_errors > 0 { <p class="hash-caution">{"エラーが残っている修正案のハッシュです。必要な修正を入力に反映してください。"}</p> }
                         <details class="hash-details"><summary>{"ハッシュ対象のテキストを確認"}</summary><textarea class="preview-text" readonly=true value={hash_input.clone()} aria-label="ハッシュ計算対象" spellcheck="false" /><CopyButton key={hash_input.clone()} text={hash_input.clone()} label="ハッシュ対象をコピー" /></details>
                     } else { <p class="blocked-output">{"解答欄を確定できるまで、ハッシュを計算しません。"}</p> }
                     </div>

@@ -1,5 +1,22 @@
 use answer_checker::{Severity, check};
 
+// These older fixtures isolate notation, normalization and numbering. They are
+// intentionally not full solutions; construction/calculation diagnostics are
+// tested separately against small, hand-written examples in the rule modules.
+trait FormattingReport {
+    fn format_errors(&self) -> usize;
+}
+impl FormattingReport for answer_checker::Report {
+    fn format_errors(&self) -> usize {
+        self.issues
+            .iter()
+            .filter(|i| {
+                i.severity == answer_checker::Severity::Error && !i.code.starts_with("mechanical-")
+            })
+            .count()
+    }
+}
+
 // Synthetic notation examples, not proofs or automata for the assignment.
 const A07: &str = "学籍番号: 00X00000\n氏名: ダミー\n\n7-1=====\n検査用の文章。u=x^{n+1}、|u|>=1 と記す。\n\nu in X と u not in Y は記法の例。\n========\n\n7-2=====\n別の文章。v=y^{|u|}、eps、0<=k<n と書く。\n========\n";
 const FORMS: &str = "lf(e)={<y,(x+y)*>,<x,1>}\nlf(1)={}\ni=0,K={},Delta={e}\ni=1,K={e},Delta={1,(x+y)*}\ni=2,K={1,(x+y)*,e},Delta={}";
@@ -13,18 +30,16 @@ fn has(id: &str, text: &str, code: &str) -> bool {
 }
 
 #[test]
-fn new_assignments_accept_synthetic_content_without_grading_it() {
+fn synthetic_fixtures_keep_format_and_hash_with_independent_mechanical_diagnostics() {
     for (id, input) in [("07", A07), ("08", A08)] {
         let r = check(id, input.as_bytes());
-        assert_eq!(r.errors(), 0, "{id}: {:?}", r.issues);
-        // The old finite x/y toy has no paths for aac, bbc, cbaa. Its numbering
-        // checks are now explicitly reported as unavailable, without grading it.
-        assert_eq!(
-            r.warnings(),
-            if id == "08" { 3 } else { 0 },
-            "{id}: {:?}",
-            r.issues
-        );
+        assert_eq!(r.format_errors(), 0, "{id}: {:?}", r.issues);
+        if id == "08" {
+            assert!(r.issues.iter().any(|i| i.code == "mechanical-alphabet"));
+        }
+        // The old x/y fixture is rejected by the new alphabet check, while
+        // its original formatting and canonical output remain unchanged.
+        assert_eq!(r.warnings(), 0, "{id}: {:?}", r.issues);
         assert_eq!(r.normalized.as_deref(), Some(input));
         assert!(r.hash.is_some());
     }
@@ -37,7 +52,7 @@ fn proof_preserves_japanese_indentation_spaces_paragraphs_and_order() {
         "  日本語の文章と  空白を保持。  \n\n次の段落。\n",
     );
     let r = check("07", input.as_bytes());
-    assert_eq!(r.errors(), 0);
+    assert_eq!(r.format_errors(), 0);
     assert_eq!(r.normalized.as_deref(), Some(input.as_str()));
     assert!(!r.issues.iter().any(|issue| issue.code == "ascii"));
     assert_ne!(r.hash, check("07", A07.as_bytes()).hash);
@@ -86,7 +101,7 @@ fn uncertain_math_candidates_only_warn_and_never_force_ascii_on_prose() {
     ] {
         let input = A07.replace("検査用の文章。", value);
         let r = check("07", input.as_bytes());
-        assert_eq!(r.errors(), 0, "{value}: {:?}", r.issues);
+        assert_eq!(r.format_errors(), 0, "{value}: {:?}", r.issues);
         assert!(
             r.issues
                 .iter()
@@ -101,10 +116,10 @@ fn uncertain_math_candidates_only_warn_and_never_force_ascii_on_prose() {
 #[test]
 fn exponent_notation_handles_nesting_without_semantic_checks() {
     let input = A07.replace("x^{n+1}", "x^{k^{m}+|v|}");
-    assert_eq!(check("07", input.as_bytes()).errors(), 0);
+    assert_eq!(check("07", input.as_bytes()).format_errors(), 0);
     let nested = format!("{}1{}", "x^{".repeat(5000), "}".repeat(5000));
     assert_eq!(
-        check("07", A07.replace("x^{n+1}", &nested).as_bytes()).errors(),
+        check("07", A07.replace("x^{n+1}", &nested).as_bytes()).format_errors(),
         0
     );
     let unfinished = A07.replace("x^{n+1}", &"x^{".repeat(5000));
@@ -139,7 +154,7 @@ fn start_states_stay_separate_from_final_states_and_sorted_transitions() {
     assert_eq!(r.normalized.as_deref(), Some(A08));
     assert_eq!(r.hash, check("08", A08.as_bytes()).hash);
     let again = check("08", r.normalized.unwrap().as_bytes());
-    assert_eq!(again.errors(), 0);
+    assert_eq!(again.format_errors(), 0);
     assert_eq!(again.warnings(), check("08", A08.as_bytes()).warnings());
     assert_eq!(again.hash, r.hash);
 }
@@ -199,7 +214,7 @@ fn numeric_state_names_sort_as_strings_including_eleven_before_two() {
         original,
         &format!("8-1.1=====\n1\n11\n\n{}", transitions.join("\n")),
     );
-    assert_eq!(check("08", input.as_bytes()).errors(), 0);
+    assert_eq!(check("08", input.as_bytes()).format_errors(), 0);
     assert!(input.find("(11,x,11)").unwrap() < input.find("(2,x,2)").unwrap());
     let numeric_order = input.replace(&transitions.join("\n"), &unsorted);
     assert!(has("08", &numeric_order, "sort"));
@@ -213,7 +228,7 @@ fn numeric_state_names_sort_as_strings_including_eleven_before_two() {
 fn top_down_regex_labels_allow_nested_parentheses_but_reject_bad_syntax() {
     for value in ["0", "1", "e", "xy", "(x+y)*x", "x(y+z)*", "((x))**"] {
         let input = A08.replace("8-1.2.2=====\n(x+y)*x", &format!("8-1.2.2=====\n{value}"));
-        assert_eq!(check("08", input.as_bytes()).errors(), 0, "{value}");
+        assert_eq!(check("08", input.as_bytes()).format_errors(), 0, "{value}");
     }
     for value in ["()", "x+", "+x", "x(+y)", "((x)", "$", "x|y", "x{2}", "*x"] {
         let input = A08.replace("8-1.2.2=====\n(x+y)*x", &format!("8-1.2.2=====\n{value}"));
@@ -227,7 +242,7 @@ fn top_down_regex_labels_allow_nested_parentheses_but_reject_bad_syntax() {
     }
     let nested = format!("{}x{}", "(".repeat(10000), ")".repeat(10000));
     let input = A08.replace("8-1.2.2=====\n(x+y)*x", &format!("8-1.2.2=====\n{nested}"));
-    assert_eq!(check("08", input.as_bytes()).errors(), 0);
+    assert_eq!(check("08", input.as_bytes()).format_errors(), 0);
 }
 
 #[test]
@@ -239,7 +254,7 @@ fn linear_forms_and_stage_members_keep_their_input_order_and_duplicates() {
         "lf(1)={}\nlf(e)={<x,1>,<y,(x+y)*>}",
     );
     let r = check("08", swapped.as_bytes());
-    assert_eq!(r.errors(), 0);
+    assert_eq!(r.format_errors(), 0);
     assert_eq!(r.normalized.as_deref(), Some(swapped.as_str()));
     assert_ne!(r.hash, check("08", A08.as_bytes()).hash);
     let duplicate = A08.replace("lf(1)={}", "lf(1)={}\nlf(1)={}");
@@ -254,7 +269,7 @@ fn linear_forms_and_stage_members_keep_their_input_order_and_duplicates() {
 }
 
 #[test]
-fn linear_form_and_iteration_shapes_are_checked_without_computing_them() {
+fn linear_form_and_iteration_syntax_are_checked_independently_of_values() {
     for value in [
         "lf()={}",
         "lf(e)={(x,1)}",
@@ -295,7 +310,7 @@ fn linear_form_and_iteration_shapes_are_checked_without_computing_them() {
         FORMS,
         "lf(z)={<x,0>}\ni=0,K={z},Delta={}\ni=1,K={},Delta={z}",
     );
-    assert_eq!(check("08", wrong_but_typed.as_bytes()).errors(), 0);
+    assert_eq!(check("08", wrong_but_typed.as_bytes()).format_errors(), 0);
 }
 
 #[test]
@@ -382,7 +397,7 @@ fn comments_identity_bom_and_line_endings_do_not_change_new_hashes() {
             edited.replace('\n', "\r"),
         ] {
             let r = check(id, format!("\u{feff}{text}").as_bytes());
-            assert_eq!(r.errors(), 0, "{id}: {:?}", r.issues);
+            assert_eq!(r.format_errors(), 0, "{id}: {:?}", r.issues);
             assert_eq!(r.hash, check(id, input.as_bytes()).hash);
             let again = check(id, r.normalized.as_ref().unwrap().as_bytes());
             assert_eq!(again.hash, r.hash);

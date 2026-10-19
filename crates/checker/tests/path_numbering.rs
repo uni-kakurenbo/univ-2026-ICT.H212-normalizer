@@ -1,5 +1,22 @@
 use answer_checker::check;
 
+// These older fixtures isolate notation, normalization and numbering. They are
+// intentionally not full solutions; construction/calculation diagnostics are
+// tested separately against small, hand-written examples in the rule modules.
+trait FormattingReport {
+    fn format_errors(&self) -> usize;
+}
+impl FormattingReport for answer_checker::Report {
+    fn format_errors(&self) -> usize {
+        self.issues
+            .iter()
+            .filter(|i| {
+                i.severity == answer_checker::Severity::Error && !i.code.starts_with("mechanical-")
+            })
+            .count()
+    }
+}
+
 // Finite, synthetic three-branch graph. This is deliberately not a construction
 // for the assignment's regex; only the requested numbering rules are exercised.
 const EDGES: &[&str] = &[
@@ -49,7 +66,7 @@ fn relabeled_answer(permutation: &[(u8, u8)]) -> String {
 fn finite_toy_paths_pass_numbering_without_grading_the_language() {
     let text = answer(EDGES);
     let r = check("08", text.as_bytes());
-    assert_eq!(r.errors(), 0, "{:?}", r.issues);
+    assert_eq!(r.format_errors(), 0, "{:?}", r.issues);
     assert_eq!(r.warnings(), 0, "{:?}", r.issues);
     assert_eq!(r.normalized.as_deref(), Some(text.as_str()));
     // bbc ends at 9 while cbaa's fourth state is 8. The i < n restriction
@@ -128,7 +145,7 @@ fn returning_paths_and_duplicate_edges_do_not_create_ambiguous_sequences() {
     edges.extend(["(2,$,3)", "(3,$,2)", "(9,x,1)", "(1,a,2)"]);
     let text = answer(&edges);
     let r = check("08", text.as_bytes());
-    assert_eq!(r.errors(), 0, "{:?}", r.issues);
+    assert_eq!(r.format_errors(), 0, "{:?}", r.issues);
     assert_eq!(r.warnings(), 0, "{:?}", r.issues);
     assert_eq!(r.normalized.as_deref(), Some(text.as_str()));
     assert_eq!(text.matches("(1,a,2)").count(), 2);
@@ -144,7 +161,7 @@ fn different_epsilon_placements_with_the_same_state_sequence_are_not_ambiguous()
     );
     assert!(!has(&text, "path-numbering-ambiguous"));
     assert_eq!(check("08", text.as_bytes()).warnings(), 2); // bbc, cbaa only.
-    assert_eq!(check("08", text.as_bytes()).errors(), 0);
+    assert_eq!(check("08", text.as_bytes()).format_errors(), 0);
 }
 
 #[test]
@@ -164,7 +181,7 @@ fn path_number_comparisons_use_integer_order_for_two_digit_states() {
     edges.extend(["(1,$,2)".into(), "(2,$,3)".into()]);
     let text = answer_with_final(&edges.iter().map(String::as_str).collect::<Vec<_>>(), 11);
     let r = check("08", text.as_bytes());
-    assert_eq!(r.errors(), 0, "{:?}", r.issues);
+    assert_eq!(r.format_errors(), 0, "{:?}", r.issues);
     assert_eq!(r.warnings(), 0, "{:?}", r.issues);
     assert_eq!(r.normalized.as_deref(), Some(text.as_str()));
 }
@@ -182,7 +199,7 @@ fn missing_and_ambiguous_simple_paths_warn_instead_of_selecting_or_grading() {
         (ambiguous, "path-numbering-ambiguous"),
     ] {
         let r = check("08", text.as_bytes());
-        assert_eq!(r.errors(), 0, "{:?}", r.issues);
+        assert_eq!(r.format_errors(), 0, "{:?}", r.issues);
         assert!(has(&text, code));
         assert!(!has(&text, "path-order-aac-bbc"));
         assert_eq!(r.normalized.as_deref(), Some(text.as_str()));
@@ -215,6 +232,6 @@ fn exponential_simple_path_search_stops_with_an_explicit_unchecked_warning() {
     );
     let r = check("08", text.as_bytes());
     assert!(has(&text, "path-numbering-limit"));
-    assert_eq!(r.errors(), 0, "{:?}", r.issues);
+    assert_eq!(r.format_errors(), 0, "{:?}", r.issues);
     assert_eq!(r.normalized.as_deref(), Some(text.as_str()));
 }

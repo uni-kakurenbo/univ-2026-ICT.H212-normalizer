@@ -8,9 +8,11 @@ pub const MAX_BYTES: usize = 1024 * 1024;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Format {
     Compact,
+    StrictCompact,
     Prose,
     Productions,
     DfaTransitions,
+    StartedTransitions,
     StatePairs { allow_empty: bool },
     PngFilename,
 }
@@ -420,10 +422,12 @@ pub fn check(assignment_id: &str, bytes: &[u8]) -> Report {
                 && (matches!(
                     spec.format,
                     Format::Compact
+                        | Format::StrictCompact
                         | Format::Productions
                         | Format::PngFilename
                         | Format::StatePairs { .. }
-                ) || (spec.format == Format::DfaTransitions && normalized_rows.len() > 1))
+                ) || (spec.format == Format::DfaTransitions && normalized_rows.len() > 1)
+                    || (spec.format == Format::StartedTransitions && normalized_rows.len() != 2))
             {
                 removed_blanks = true;
                 r.issue(
@@ -454,24 +458,43 @@ pub fn check(assignment_id: &str, bytes: &[u8]) -> Report {
             pairs.sort_unstable();
             sorted_pairs |= pairs != before;
             pairs.join("\n")
-        } else if spec.format == Format::DfaTransitions && !normalized_rows.is_empty() {
-            let mut finals: Vec<_> = normalized_rows[0].split(',').collect();
+        } else if matches!(
+            spec.format,
+            Format::DfaTransitions | Format::StartedTransitions
+        ) && normalized_rows.len()
+            >= if spec.format == Format::StartedTransitions {
+                2
+            } else {
+                1
+            }
+        {
+            let header_count = if spec.format == Format::StartedTransitions {
+                2
+            } else {
+                1
+            };
+            let mut finals: Vec<_> = normalized_rows[header_count - 1].split(',').collect();
             let before_finals = finals.clone();
             finals.sort_unstable();
             sorted |= before_finals != finals;
             let mut transitions: Vec<_> = normalized_rows
                 .iter()
-                .skip(1)
+                .skip(header_count)
                 .copied()
                 .filter(|s| !s.is_empty())
                 .collect();
             let before = transitions.clone();
             transitions.sort_unstable();
             sorted |= before != transitions;
-            if transitions.is_empty() {
-                finals.join(",")
+            let headers = if spec.format == Format::StartedTransitions {
+                format!("{}\n{}", normalized_rows[0], finals.join(","))
             } else {
-                format!("{}\n\n{}", finals.join(","), transitions.join("\n"))
+                finals.join(",")
+            };
+            if transitions.is_empty() {
+                headers
+            } else {
+                format!("{}\n\n{}", headers, transitions.join("\n"))
             }
         } else {
             normalized_rows.join("\n")
@@ -528,6 +551,13 @@ pub fn check(assignment_id: &str, bytes: &[u8]) -> Report {
 
 fn check_row(r: &mut Report, spec: &Section, row: &AnswerLine<'_>) {
     use Severity::*;
+    if matches!(
+        spec.format,
+        Format::StrictCompact | Format::StartedTransitions
+    ) && row.text.contains([' ', '\t'])
+    {
+        r.issue(Error, "forbidden-space", Some(row.number), "この解答欄にはスペース・タブを入れません。修正案では行の端の空白のみ除き、行中の空白は保持します。");
+    }
     if spec.ascii && !row.text.is_ascii() {
         r.issue(
             Error,
@@ -570,7 +600,11 @@ fn check_row(r: &mut Report, spec: &Section, row: &AnswerLine<'_>) {
     }
     if matches!(
         spec.format,
-        Format::Compact | Format::Productions | Format::DfaTransitions | Format::StatePairs { .. }
+        Format::Compact
+            | Format::Productions
+            | Format::DfaTransitions
+            | Format::StartedTransitions
+            | Format::StatePairs { .. }
     ) && edge_trim(row.text).contains(' ')
     {
         r.issue(

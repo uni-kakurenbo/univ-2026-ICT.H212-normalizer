@@ -260,6 +260,20 @@ fn adding_assignment_04_keeps_previous_hashes_fixed() {
 
 #[test]
 fn adding_assignments_05_and_06_keeps_assignment_04_and_old_percent_text() {
+    for (id, input, digest) in [
+        (
+            "05",
+            A05,
+            "0aef71e62209047a617e77d5593af771710478fa921dcaa572f2c0f0f7a32911",
+        ),
+        (
+            "06",
+            A06,
+            "5c284bdf0e027dd8f040aa1c4612879d60c764a5cc9966a9d82035ecd179003e",
+        ),
+    ] {
+        assert_eq!(check(id, input.as_bytes()).hash.as_deref(), Some(digest));
+    }
     assert_eq!(
         check("04", A04.as_bytes()).hash.as_deref(),
         Some("84d4362c7e8c218f67605b8f1cdeca6cd80eb9998340fe94e9e6611f9bf71daf")

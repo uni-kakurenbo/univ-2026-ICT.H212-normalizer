@@ -2,17 +2,24 @@ use super::Assignment;
 use crate::{AnswerLine, Format, Report, Section, Severity, edge_trim};
 use std::collections::BTreeSet;
 
+mod paths;
+
 // Sources: 08_answer-sheet.txt; autolang第8回.pdf pp.5, 7–12.
 // Explicit start row, final CSV row, then triples. Preserve the start separately.
 // The user confirmed 8-1.1 positive consecutive labels and the unique maximum
-// final label. Count labels present, without evaluating any accepting paths.
+// final label. The user also requests numbering checks on accepting paths for
+// aac, bbc, cbaa only (including epsilon edges and both endpoints). Applying
+// strict increase to every accepted word would conflict with Kleene-star loops.
+// Interpret the user's "ignore returning paths" as excluding state revisits,
+// independently of numeric labels. Missing/multiple paths or search exhaustion
+// are warnings with the relevant conditions explicitly marked unchecked.
 // 8-1.2 labels are regexes with nested (), concatenation, +, *, constants 0/1
 // and alias e. Never compute lf, K/Delta membership, equivalence or correctness.
 // No ordering of lf rows/set members is specified: preserve them and step order.
 pub const ASSIGNMENT: Assignment = Assignment {
     id: "08",
     title: "演習08：正規表現とオートマトン",
-    note: "オートマトン欄は出発状態、最終状態、三つ組の順。最終状態と遷移は文字の辞書順（11 は 2 より前）。8-1.1 は1からの連続番号と最大番号の最終状態を検査。8-1.2.1 は lf(p)={...} と i=0,K={...},Delta={...}。導出の順序は保持し、空白・タブはエラーです。",
+    note: "オートマトン欄は出発状態、最終状態、三つ組の順。最終状態と遷移は文字の辞書順（11 は 2 より前）。8-1.1 は連続番号・最大番号の最終状態と、aac / bbc / cbaa の状態を再訪しない経路の番号条件を検査。8-1.2.1 は lf(p)={...} と i=0,K={...},Delta={...}。導出の順序は保持し、空白・タブはエラーです。",
     comment_prefix: "%%%",
     hash_prefixed_finals: false,
     sections: &[
@@ -85,7 +92,15 @@ fn symbol(value: &str) -> bool {
 }
 
 fn check_numbered(r: &mut Report, rows: &[&AnswerLine<'_>]) {
+    let before = r.issues.len();
     check_automaton(r, rows, true);
+    if rows.len() >= 2
+        && !r.issues[before..]
+            .iter()
+            .any(|issue| issue.severity == Severity::Error && issue.code != "sort")
+    {
+        paths::check(r, rows);
+    }
 }
 fn check_regex_automaton(r: &mut Report, rows: &[&AnswerLine<'_>]) {
     check_automaton(r, rows, false);

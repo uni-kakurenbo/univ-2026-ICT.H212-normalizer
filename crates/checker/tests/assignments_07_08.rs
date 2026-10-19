@@ -17,7 +17,14 @@ fn new_assignments_accept_synthetic_content_without_grading_it() {
     for (id, input) in [("07", A07), ("08", A08)] {
         let r = check(id, input.as_bytes());
         assert_eq!(r.errors(), 0, "{id}: {:?}", r.issues);
-        assert_eq!(r.warnings(), 0, "{id}: {:?}", r.issues);
+        // The old finite x/y toy has no paths for aac, bbc, cbaa. Its numbering
+        // checks are now explicitly reported as unavailable, without grading it.
+        assert_eq!(
+            r.warnings(),
+            if id == "08" { 3 } else { 0 },
+            "{id}: {:?}",
+            r.issues
+        );
         assert_eq!(r.normalized.as_deref(), Some(input));
         assert!(r.hash.is_some());
     }
@@ -133,7 +140,7 @@ fn start_states_stay_separate_from_final_states_and_sorted_transitions() {
     assert_eq!(r.hash, check("08", A08.as_bytes()).hash);
     let again = check("08", r.normalized.unwrap().as_bytes());
     assert_eq!(again.errors(), 0);
-    assert_eq!(again.warnings(), 0);
+    assert_eq!(again.warnings(), check("08", A08.as_bytes()).warnings());
     assert_eq!(again.hash, r.hash);
 }
 
@@ -364,7 +371,7 @@ fn comments_identity_bom_and_line_endings_do_not_change_new_hashes() {
         let with_comments = check(id, edited.as_bytes());
         assert_eq!(
             with_comments.warnings(),
-            0,
+            check(id, renamed.as_bytes()).warnings(),
             "{id}: {:?}",
             with_comments.issues
         );

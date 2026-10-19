@@ -351,15 +351,24 @@ fn assignment_08_spaces_tabs_epsilon_and_missing_headers_are_diagnosed() {
 #[test]
 fn comments_identity_bom_and_line_endings_do_not_change_new_hashes() {
     for (id, input) in [("07", A07), ("08", A08)] {
-        let mut edited = input
+        let renamed = input
             .replace("00X00000", "99Z99999")
             .replace("ダミー", "別のダミー");
+        let mut edited = renamed.clone();
         for spec in answer_checker::assignments::get(id).unwrap().sections {
             edited = edited.replace(
                 spec.marker,
                 &format!("%%%% 指示\n{}\n%%% 注意書き", spec.marker),
             );
         }
+        let with_comments = check(id, edited.as_bytes());
+        assert_eq!(
+            with_comments.warnings(),
+            0,
+            "{id}: {:?}",
+            with_comments.issues
+        );
+        assert_eq!(with_comments.normalized.as_deref(), Some(renamed.as_str()));
         for text in [
             edited.clone(),
             edited.replace('\n', "\r\n"),

@@ -261,15 +261,6 @@ pub fn check(assignment_id: &str, bytes: &[u8]) -> Report {
             });
         if is_comment(line, assignment.comment_prefix) && !hash_final {
             comment_count += 1;
-            r.issue(
-                Warning,
-                "comment",
-                Some(number),
-                format!(
-                    "{} で始まるコメントが残っています。修正案とハッシュ対象から除きます。",
-                    assignment.comment_prefix
-                ),
-            );
             continue;
         }
         if let Some(index) = assignment.sections.iter().position(|s| s.marker == line) {

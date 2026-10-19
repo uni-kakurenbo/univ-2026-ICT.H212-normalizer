@@ -47,13 +47,16 @@ fn hash_v1_has_exact_representation() {
 #[test]
 fn private_headers_comments_and_newlines_do_not_affect_hash() {
     let expected = check("01", A01.as_bytes()).hash;
-    let edited = A01
+    let renamed = A01
         .replace("00X00000", "99Z99999")
-        .replace("ダミー", "別の名前")
-        .replace(
-            "1-1=====\n",
-            "# top instruction\n1-1=====\n### inner instruction\n",
-        );
+        .replace("ダミー", "別の名前");
+    let edited = renamed.replace(
+        "1-1=====\n",
+        "# top instruction\n1-1=====\n### inner instruction\n",
+    );
+    let with_comments = check("01", edited.as_bytes());
+    assert_eq!(with_comments.warnings(), 0, "{:?}", with_comments.issues);
+    assert_eq!(with_comments.normalized.as_deref(), Some(renamed.as_str()));
     for input in [
         edited.clone(),
         edited.replace('\n', "\r\n"),

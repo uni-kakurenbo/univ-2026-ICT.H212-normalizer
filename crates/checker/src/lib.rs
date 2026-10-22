@@ -10,10 +10,14 @@ pub enum Format {
     Compact,
     StrictCompact,
     Prose,
+    /// Preserve algebraic work, explanations and indentation in source order.
+    AlgebraicDerivation,
     Productions,
     DfaTransitions,
     StartedTransitions,
-    StatePairs { allow_empty: bool },
+    StatePairs {
+        allow_empty: bool,
+    },
     PngFilename,
 }
 
@@ -403,7 +407,7 @@ pub fn check(assignment_id: &str, bytes: &[u8]) -> Report {
         }
         let mut normalized_rows = Vec::new();
         for row in &rows[first..last] {
-            let value = if spec.format == Format::Prose {
+            let value = if matches!(spec.format, Format::Prose | Format::AlgebraicDerivation) {
                 row.text
             } else {
                 edge_trim(row.text)
@@ -557,8 +561,15 @@ fn check_row(r: &mut Report, spec: &Section, row: &AnswerLine<'_>) {
             format!("{} の解答には ASCII 以外の文字が含まれています。", spec.id),
         );
     }
-    if row.text != edge_trim(row.text) {
-        let action = if spec.format == Format::Prose {
+    // Algebraic derivations explicitly allow leading indentation. Preserve all
+    // of it; only trailing spaces get an edge-space warning in this format.
+    let edge_space = if spec.format == Format::AlgebraicDerivation {
+        row.text != row.text.trim_end_matches([' ', '\t'])
+    } else {
+        row.text != edge_trim(row.text)
+    };
+    if edge_space {
+        let action = if matches!(spec.format, Format::Prose | Format::AlgebraicDerivation) {
             "文章欄のため自動削除しません。"
         } else {
             "修正案では除きます。"
@@ -567,7 +578,14 @@ fn check_row(r: &mut Report, spec: &Section, row: &AnswerLine<'_>) {
             Warning,
             "edge-space",
             Some(row.number),
-            format!("行頭・行末に半角空白またはタブがあります。{action}"),
+            format!(
+                "{}に半角空白またはタブがあります。{action}",
+                if spec.format == Format::AlgebraicDerivation {
+                    "行末"
+                } else {
+                    "行頭・行末"
+                }
+            ),
         );
     }
     if row.text.contains('\t') {

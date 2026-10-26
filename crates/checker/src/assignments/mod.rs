@@ -9,6 +9,7 @@ mod a08;
 mod a09;
 mod a11;
 mod a12;
+mod cfg_procedure;
 
 use crate::Section;
 

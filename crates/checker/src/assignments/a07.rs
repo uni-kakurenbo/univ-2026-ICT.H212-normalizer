@@ -33,6 +33,16 @@ pub const ASSIGNMENT: Assignment = Assignment {
 };
 
 fn check_notation(r: &mut Report, rows: &[&AnswerLine<'_>]) {
+    check_proof_notation(r, rows, Some("eps"));
+}
+
+// Reused by assignment 13, whose template has the same math notation but no
+// specified ASCII spelling for the empty word. None must never require eps.
+pub(super) fn check_proof_notation(
+    r: &mut Report,
+    rows: &[&AnswerLine<'_>],
+    empty_word: Option<&str>,
+) {
     for row in rows {
         let text = row.text;
         if text.contains(['≤', '≥', '≦', '≧', '≠', '＝', '＜', '＞']) {
@@ -46,12 +56,14 @@ fn check_notation(r: &mut Report, rows: &[&AnswerLine<'_>]) {
                 "所属の記法は u in L または u not in L を使ってください。∈・∉ は使いません。",
             );
         }
-        if text.contains(['ε', 'ϵ']) {
+        if let Some(notation) = empty_word
+            && text.contains(['ε', 'ϵ'])
+        {
             r.issue(
                 Severity::Error,
                 "proof-empty-word",
                 Some(row.number),
-                "演習07の空語は eps で表します。ε・ϵ は使いません。",
+                format!("この課題の空語は {notation} で表します。ε・ϵ は使いません。"),
             );
         }
         // Match braces once, so nested or unfinished exponents cannot trigger
@@ -80,7 +92,7 @@ fn check_notation(r: &mut Report, rows: &[&AnswerLine<'_>]) {
             let clear_base = text[..index]
                 .chars()
                 .next_back()
-                .is_some_and(|c| c.is_ascii_alphanumeric() || matches!(c, ')' | '|'));
+                .is_some_and(|c| c.is_ascii_alphanumeric() || matches!(c, ')' | '}' | '|'));
             if !clear_base {
                 candidate = true;
                 continue;
@@ -133,8 +145,19 @@ fn check_notation(r: &mut Report, rows: &[&AnswerLine<'_>]) {
                 non_ascii_length = true;
             }
         }
-        if candidate || unusual || command || non_ascii_length || text.contains('$') {
-            r.issue(Severity::Warning, "math-possible", Some(row.number), "数式の誤表記である可能性があります。数式らしい記号・表記を検出しました。数式は ASCII、空語は eps という指定を確認してください。文章中の記号なら変更は不要です。");
+        let unspecified_empty = empty_word.is_none() && text.contains(['ε', 'ϵ']);
+        if candidate
+            || unusual
+            || command
+            || non_ascii_length
+            || text.contains('$')
+            || unspecified_empty
+        {
+            let notation = empty_word.map_or_else(
+                || "数式は ASCII という指定を確認してください。".to_owned(),
+                |word| format!("数式は ASCII、空語は {word} という指定を確認してください。"),
+            );
+            r.issue(Severity::Warning, "math-possible", Some(row.number), format!("数式の誤表記である可能性があります。数式らしい記号・表記を検出しました。{notation}文章中の記号なら変更は不要です。"));
         }
     }
 }

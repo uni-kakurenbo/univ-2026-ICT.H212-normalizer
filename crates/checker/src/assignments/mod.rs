@@ -9,6 +9,7 @@ mod a08;
 mod a09;
 mod a11;
 mod a12;
+mod a13;
 mod cfg_procedure;
 
 use crate::Section;
@@ -36,6 +37,7 @@ pub static ASSIGNMENTS: &[Assignment] = &[
     a09::ASSIGNMENT,
     a11::ASSIGNMENT,
     a12::ASSIGNMENT,
+    a13::ASSIGNMENT,
 ];
 
 pub fn get(id: &str) -> Option<&'static Assignment> {

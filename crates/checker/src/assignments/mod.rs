@@ -11,6 +11,7 @@ mod a11;
 mod a12;
 mod a13;
 mod a14;
+mod a15;
 mod cfg_procedure;
 
 use crate::{AnswerLine, Report, Section};
@@ -42,6 +43,7 @@ pub static ASSIGNMENTS: &[Assignment] = &[
     a12::ASSIGNMENT,
     a13::ASSIGNMENT,
     a14::ASSIGNMENT,
+    a15::ASSIGNMENT,
 ];
 
 pub fn get(id: &str) -> Option<&'static Assignment> {
@@ -53,5 +55,7 @@ pub fn get(id: &str) -> Option<&'static Assignment> {
 pub(crate) fn check_related_sections(id: &str, r: &mut Report, bodies: &[Vec<AnswerLine<'_>>]) {
     if id == "14" {
         a14::check_related(r, bodies);
+    } else if id == "15" {
+        a15::check_related(r, bodies);
     }
 }

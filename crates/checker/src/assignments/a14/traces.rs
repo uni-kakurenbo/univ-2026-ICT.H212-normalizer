@@ -34,13 +34,43 @@ pub(super) fn check_related(r: &mut Report, bodies: &[Vec<AnswerLine<'_>>]) {
         return;
     };
     let nonempty = |row: &&AnswerLine<'_>| !row.text.trim().is_empty();
-    let trace_entered = aa.iter().chain(aba).any(|row| !row.text.trim().is_empty());
+    let definitions: Vec<_> = definitions.iter().filter(nonempty).collect();
+    let transitions: Vec<_> = transitions.iter().filter(nonempty).collect();
+    check_machine(
+        r,
+        &definitions,
+        &transitions,
+        &[(aa, "aa"), (aba, "aba")],
+        &Spec {
+            alphabet: super::STACK_SYMBOLS,
+            definition_section: "14-2",
+            transition_section: "14-1",
+        },
+    );
+}
+
+pub(in crate::assignments) struct Spec<'a> {
+    pub alphabet: &'a str,
+    pub definition_section: &'a str,
+    pub transition_section: &'a str,
+}
+
+pub(in crate::assignments) fn check_machine(
+    r: &mut Report,
+    definitions: &[&AnswerLine<'_>],
+    transitions: &[&AnswerLine<'_>],
+    traces: &[(&[AnswerLine<'_>], &str)],
+    spec: &Spec<'_>,
+) {
+    let trace_entered = traces
+        .iter()
+        .any(|(rows, _)| rows.iter().any(|row| !row.text.trim().is_empty()));
     let definition_unchecked = |r: &mut Report| {
         if trace_entered {
-            r.issue(Severity::Warning, "pda-trace-unchecked", None, "14-2 が空欄・複数行・構文エラーのため、時点表示と NPDA の宣言・遷移の照合は未検査です。");
+            r.issue(Severity::Warning, "pda-trace-unchecked", None, format!("{} の定義が空欄・複数行・構文エラーのため、時点表示と NPDA の宣言・遷移の照合は未検査です。", spec.definition_section));
         }
     };
-    let mut definitions = definitions.iter().filter(nonempty);
+    let mut definitions = definitions.iter();
     let Some(row) = definitions.next() else {
         definition_unchecked(r);
         return;
@@ -58,7 +88,7 @@ pub(super) fn check_related(r: &mut Report, bodies: &[Vec<AnswerLine<'_>>]) {
     let declared = Declared::from(&d);
     let mut rules = BTreeSet::new();
     let mut valid = true;
-    for row in transitions.iter().filter(nonempty) {
+    for row in transitions {
         let Some(rule) = transition(edge_trim(row.text)) else {
             valid = false;
             continue;
@@ -70,7 +100,7 @@ pub(super) fn check_related(r: &mut Report, bodies: &[Vec<AnswerLine<'_>>]) {
             || !declared.stack_contains(pop)
             || !declared.stack_contains(decode(push))
         {
-            r.issue(Severity::Error, "mechanical-pda-declaration", Some(row.number), "遷移の状態・入力記号・スタック記号が 14-2 の K/Σ/Γ に含まれていません。宣言と遷移を対応させてください。");
+            r.issue(Severity::Error, "mechanical-pda-declaration", Some(row.number), format!("遷移の状態・入力記号・スタック記号が {} の K/Σ/Γ に含まれていません。宣言と遷移を対応させてください。", spec.definition_section));
         }
         rules.insert(rule);
     }
@@ -80,33 +110,51 @@ pub(super) fn check_related(r: &mut Report, bodies: &[Vec<AnswerLine<'_>>]) {
                 Severity::Warning,
                 "pda-trace-unchecked",
                 None,
-                "14-1 の遷移が空欄または構文エラーのため、時点表示の遷移照合は未検査です。",
+                format!(
+                    "{} の遷移が空欄または構文エラーのため、時点表示の遷移照合は未検査です。",
+                    spec.transition_section
+                ),
             );
         }
         return;
     }
-    check_trace(r, aa, "aa", &d, &declared, &rules);
-    check_trace(r, aba, "aba", &d, &declared, &rules);
+    let machine = Machine {
+        definition: &d,
+        declared: &declared,
+        rules: &rules,
+        spec,
+    };
+    for (rows, word) in traces {
+        check_trace(r, rows, word, &machine);
+    }
+}
+
+struct Machine<'a, 'b> {
+    definition: &'a Definition<'b>,
+    declared: &'a Declared<'b>,
+    rules: &'a BTreeSet<[&'b str; 5]>,
+    spec: &'a Spec<'a>,
 }
 
 // Match the exact rule inferred from two consecutive configurations. There is
 // no NPDA run enumeration: nondeterminism only means at least one listed rule
 // can match. A BTreeSet deduplicates for lookup, never for output/hashing.
-fn check_trace(
-    r: &mut Report,
-    rows: &[AnswerLine<'_>],
-    word: &str,
-    d: &Definition<'_>,
-    declared: &Declared<'_>,
-    rules: &BTreeSet<[&str; 5]>,
-) {
+fn check_trace(r: &mut Report, rows: &[AnswerLine<'_>], word: &str, machine: &Machine<'_, '_>) {
+    let Machine {
+        definition: d,
+        declared,
+        rules,
+        spec,
+    } = machine;
     let nonempty: Vec<_> = rows
         .iter()
         .filter(|row| !row.text.trim().is_empty())
         .collect();
     let mut previous = None;
     for (i, row) in nonempty.iter().enumerate() {
-        let Some(config @ [q, remaining, stack]) = configuration(edge_trim(row.text)) else {
+        let Some(config @ [q, remaining, stack]) =
+            configuration(edge_trim(row.text), spec.alphabet)
+        else {
             previous = None;
             continue;
         };
@@ -120,11 +168,14 @@ fn check_trace(
                 Severity::Error,
                 "mechanical-pda-config-declaration",
                 Some(row.number),
-                "時点表示の状態・残り入力・スタック記号が 14-2 の K/Σ/Γ に含まれていません。",
+                format!(
+                    "時点表示の状態・残り入力・スタック記号が {} の K/Σ/Γ に含まれていません。",
+                    spec.definition_section
+                ),
             );
         }
         if i == 0 && (q != d.start || remaining != word || stack != d.bottom) {
-            r.issue(Severity::Error, "mechanical-pda-trace-start", Some(row.number), format!("この欄の最初の時点表示は、14-2 の出発状態・底記号と入力 {word} を使って記載してください。"));
+            r.issue(Severity::Error, "mechanical-pda-trace-start", Some(row.number), format!("この欄の最初の時点表示は、{} の出発状態・底記号と入力 {word} を使って記載してください。", spec.definition_section));
         }
         // T(M) uses final states and exhausted input. Do not substitute the
         // different definition N(M) (empty stack acceptance) from lecture p.10.
@@ -134,7 +185,7 @@ fn check_trace(
         if let Some(old) = previous
             && !one_step(old, config, rules)
         {
-            r.issue(Severity::Error, "mechanical-pda-trace-step", Some(row.number), "直前の行からこの行への変化が、14-1 のいずれの遷移1回分にも一致しません。入力は左から1記号（εなら0記号）を読み、スタックは左端1記号を取り除いて積む列に置き換えます。途中の行を省略していないかも確認してください。");
+            r.issue(Severity::Error, "mechanical-pda-trace-step", Some(row.number), format!("直前の行からこの行への変化が、{} のいずれの遷移1回分にも一致しません。入力は左から1記号（εなら0記号）を読み、スタックは左端1記号を取り除いて積む列に置き換えます。途中の行を省略していないかも確認してください。", spec.transition_section));
         }
         previous = Some(config);
     }

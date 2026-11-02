@@ -2,7 +2,9 @@ use super::Assignment;
 use crate::{AnswerLine, Format, Report, Section, Severity, edge_trim};
 use std::collections::BTreeSet;
 
-mod traces;
+pub(super) mod traces;
+
+pub(super) const STACK_SYMBOLS: &str = "ABZ";
 
 // Sources: 14_answer-sheet.txt; autolang第14回.pdf pp.6–10.
 // The user authorized local stack/state restrictions, declaration consistency,
@@ -75,8 +77,8 @@ pub(super) fn transition(value: &str) -> Option<[&str; 5]> {
 pub(super) fn state(value: &str) -> bool {
     matches!(value, "q0" | "q1" | "qF")
 }
-fn stack_word(value: &str) -> bool {
-    value == "$" || (!value.is_empty() && value.bytes().all(|c| matches!(c, b'A' | b'B' | b'Z')))
+fn stack_word(value: &str, alphabet: &str) -> bool {
+    value == "$" || (!value.is_empty() && value.bytes().all(|c| alphabet.as_bytes().contains(&c)))
 }
 fn input_word(value: &str) -> bool {
     value == "$" || (!value.is_empty() && value.bytes().all(|c| matches!(c, b'a' | b'b')))
@@ -85,9 +87,9 @@ pub(super) fn decode(value: &str) -> &str {
     if value == "$" { "" } else { value }
 }
 
-pub(super) fn configuration(value: &str) -> Option<[&str; 3]> {
+pub(super) fn configuration<'a>(value: &'a str, alphabet: &str) -> Option<[&'a str; 3]> {
     let fields = tuple::<3>(value)?;
-    (input_word(fields[1]) && stack_word(fields[2])).then_some([
+    (input_word(fields[1]) && stack_word(fields[2], alphabet)).then_some([
         fields[0],
         decode(fields[1]),
         decode(fields[2]),
@@ -96,7 +98,7 @@ pub(super) fn configuration(value: &str) -> Option<[&str; 3]> {
 
 fn check_notation(r: &mut Report, row: &AnswerLine<'_>) {
     if row.text.contains(['ε', 'ϵ']) {
-        r.issue(Severity::Error, "pda-epsilon", Some(row.number), "第14回の ε は $ で記載してください。空の入力・積まない記号列・空の残り入力・空スタックは欄全体を $ とします。");
+        r.issue(Severity::Error, "pda-epsilon", Some(row.number), "この課題の ε は $ で記載してください。空の入力・積まない記号列・空の残り入力・空スタックは欄全体を $ とします。");
     }
     if row.text.contains('⊥') {
         r.issue(
@@ -109,6 +111,17 @@ fn check_notation(r: &mut Report, row: &AnswerLine<'_>) {
 }
 
 fn check_transitions(r: &mut Report, rows: &[&AnswerLine<'_>]) {
+    check_transition_rows(r, rows, STACK_SYMBOLS, Some(check_local_transition));
+}
+
+type LocalCheck = fn(&mut Report, &AnswerLine<'_>, [&str; 5]);
+
+pub(super) fn check_transition_rows(
+    r: &mut Report,
+    rows: &[&AnswerLine<'_>],
+    alphabet: &str,
+    local: Option<LocalCheck>,
+) {
     let mut previous = None;
     let mut seen = BTreeSet::new();
     let mut duplicate = false;
@@ -128,7 +141,7 @@ fn check_transitions(r: &mut Report, rows: &[&AnswerLine<'_>]) {
                 Severity::Error,
                 "mechanical-pda-state",
                 Some(row.number),
-                "第14回の状態名は q0・q1・qF だけです。記号名は自動変更しません。",
+                "この課題の状態名は q0・q1・qF だけです。記号名は自動変更しません。",
             );
         }
         if !matches!(input, "$" | "a" | "b") {
@@ -139,38 +152,51 @@ fn check_transitions(r: &mut Report, rows: &[&AnswerLine<'_>]) {
                 "読む入力記号は a/b の1記号、または読まない場合の $ です。",
             );
         }
-        if !matches!(pop, "A" | "B" | "Z") || !stack_word(push) {
-            r.issue(Severity::Error, "mechanical-pda-stack", Some(row.number), "取り除く記号は A/B/Z の1記号です。積む列は A/B と保持する底記号 Z、または何も積まない $ を使ってください。$ と他の記号は混在させません。");
+        if !alphabet.contains(pop) || !stack_word(push, alphabet) {
+            r.issue(Severity::Error, "mechanical-pda-stack", Some(row.number), format!("取り除く記号は {alphabet} のいずれか1記号です。積む列はこれらの記号、または何も積まない $ を使ってください。$ と他の記号は混在させません。"));
             continue;
         }
         let replacement = decode(push);
         if replacement.contains('Z')
             && !(pop == "Z"
-                && replacement
-                    .strip_suffix('Z')
-                    .is_some_and(|prefix| prefix.bytes().all(|c| matches!(c, b'A' | b'B'))))
+                && replacement.strip_suffix('Z').is_some_and(|prefix| {
+                    prefix
+                        .bytes()
+                        .all(|c| c != b'Z' && alphabet.as_bytes().contains(&c))
+                }))
         {
-            r.issue(Severity::Error, "mechanical-pda-bottom-stack", Some(row.number), "新たに積む記号は A/B だけです。Z は元の先頭が Z のときに、置換列の末尾に1個だけ保持できます。新しい Z は積みません。");
-        }
-        if from == "q0"
-            && !replacement
-                .strip_suffix(pop)
-                .is_some_and(|added| added.bytes().all(|c| matches!(c, b'A' | b'B')))
-        {
-            r.issue(Severity::Error, "mechanical-pda-q0-stack", Some(row.number), "q0 からは元のスタック先頭を保持し、その左に A/B だけを追加できます。置換列の末尾が取り除く欄の記号と一致するか確認してください。");
-        }
-        if from == "q1" && push != "$" && push != pop {
-            r.issue(Severity::Error, "mechanical-pda-q1-stack", Some(row.number), "q1 からは新たな記号を積みません。置換列は $（先頭を取り除く）または元の先頭記号そのもの（変化なし）です。");
-        }
-        if input == "$" && to != "qF" && push != pop {
-            r.issue(Severity::Error, "mechanical-pda-epsilon-stack", Some(row.number), "qF に移る場合を除き、ε遷移ではスタックを変化させません。取り除く欄と積む欄を同じ1記号にしてください。");
+            r.issue(Severity::Error, "mechanical-pda-bottom-stack", Some(row.number), "Z は元の先頭が Z のときに、置換列の末尾に1個だけ保持できます。新しい Z は積みません。他の記号は課題で許されたものだけを使ってください。");
         }
         if to == "qF" && (from != "q1" || pop != "Z" || push != "$") {
             r.issue(Severity::Error, "mechanical-pda-final-edge", Some(row.number), "qF へは q1 からだけ移り、そのとき先頭の Z を取り除きます。取り除く欄は Z、積む欄は $ です。");
         }
+        if let Some(check) = local {
+            check(r, row, t);
+        }
     }
     if duplicate {
         r.issue(Severity::Warning, "pda-transition-duplicate", None, "同じ5つ組の遷移が重複しています。時点表示の検査では同じ1遷移と扱い、修正案からは削除しません。");
+    }
+}
+
+fn check_local_transition(
+    r: &mut Report,
+    row: &AnswerLine<'_>,
+    [from, input, pop, to, push]: [&str; 5],
+) {
+    let replacement = decode(push);
+    if from == "q0"
+        && !replacement
+            .strip_suffix(pop)
+            .is_some_and(|added| added.bytes().all(|c| matches!(c, b'A' | b'B')))
+    {
+        r.issue(Severity::Error, "mechanical-pda-q0-stack", Some(row.number), "q0 からは元のスタック先頭を保持し、その左に A/B だけを追加できます。置換列の末尾が取り除く欄の記号と一致するか確認してください。");
+    }
+    if from == "q1" && push != "$" && push != pop {
+        r.issue(Severity::Error, "mechanical-pda-q1-stack", Some(row.number), "q1 からは新たな記号を積みません。置換列は $（先頭を取り除く）または元の先頭記号そのもの（変化なし）です。");
+    }
+    if input == "$" && to != "qF" && push != pop {
+        r.issue(Severity::Error, "mechanical-pda-epsilon-stack", Some(row.number), "qF に移る場合を除き、ε遷移ではスタックを変化させません。取り除く欄と積む欄を同じ1記号にしてください。");
     }
 }
 
@@ -258,6 +284,10 @@ fn check_definition(r: &mut Report, rows: &[&AnswerLine<'_>]) {
     if rows.len() != 1 {
         r.issue(Severity::Error, "pda-definition-lines", rows.first().map(|row| row.number), "14-2 には M=(K,Σ,Γ,p,q0,Z,F) を1行だけ記載してください。複数の定義は自動で選びません。");
     }
+    check_definition_rows(r, rows, STACK_SYMBOLS);
+}
+
+pub(super) fn check_definition_rows(r: &mut Report, rows: &[&AnswerLine<'_>], alphabet: &str) {
     for row in rows {
         check_notation(r, row);
         let Some(d) = definition(edge_trim(row.text)) else {
@@ -295,8 +325,12 @@ fn check_definition(r: &mut Report, rows: &[&AnswerLine<'_>]) {
                 "入力記号の集合 Σ は a/b です。ε は入力アルファベットに加えません。",
             );
         }
-        if !sets[2].contains("Z") || sets[2].iter().any(|s| !matches!(*s, "A" | "B" | "Z")) {
-            r.issue(Severity::Error, "mechanical-pda-stack-alphabet", Some(row.number), "Γ は底記号 Z を含み、他の記号は A/B だけにしてください。未使用の A/B を必ず含めることは要求しません。");
+        if !sets[2].contains("Z")
+            || sets[2]
+                .iter()
+                .any(|s| s.len() != 1 || !alphabet.contains(*s))
+        {
+            r.issue(Severity::Error, "mechanical-pda-stack-alphabet", Some(row.number), format!("Γ は底記号 Z を含み、記号は {alphabet} に制限してください。未使用の記号を必ず含めることは要求しません。"));
         }
         if d.function != "p"
             || d.start != "q0"
@@ -309,6 +343,10 @@ fn check_definition(r: &mut Report, rows: &[&AnswerLine<'_>]) {
 }
 
 fn check_configurations(r: &mut Report, rows: &[&AnswerLine<'_>]) {
+    check_configuration_rows(r, rows, STACK_SYMBOLS);
+}
+
+pub(super) fn check_configuration_rows(r: &mut Report, rows: &[&AnswerLine<'_>], alphabet: &str) {
     for row in rows {
         check_notation(r, row);
         if row.text.contains('⊢') {
@@ -319,9 +357,9 @@ fn check_configurations(r: &mut Report, rows: &[&AnswerLine<'_>]) {
                 "時点表示は1行に1つ記載し、⊢ は書かないでください。",
             );
         }
-        match configuration(edge_trim(row.text)) {
+        match configuration(edge_trim(row.text), alphabet) {
             Some([q, _, _]) if state(q) => {}
-            _ => r.issue(Severity::Error, "pda-configuration", Some(row.number), "時点表示は (q0/q1/qF,残りの入力,スタック全体) を空白なしで1行に1つ記載してください。残りの入力は a/b、スタックは A/B/Z の列で、空の欄はそれぞれ $ です。先頭は左です。"),
+            _ => r.issue(Severity::Error, "pda-configuration", Some(row.number), format!("時点表示は (q0/q1/qF,残りの入力,スタック全体) を空白なしで1行に1つ記載してください。残りの入力は a/b、スタックは {alphabet} の列で、空の欄はそれぞれ $ です。先頭は左です。")),
         }
     }
 }

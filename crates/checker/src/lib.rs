@@ -13,6 +13,8 @@ pub enum Format {
     SortedTuples,
     /// One NPDA declaration; only its set members are sorted.
     PdaDefinition,
+    /// First row is an NPDA declaration; subsequent rows are sorted tuples.
+    PdaMachine,
     Prose,
     /// Preserve algebraic work, explanations and indentation in source order.
     AlgebraicDerivation,
@@ -433,6 +435,7 @@ pub fn check(assignment_id: &str, bytes: &[u8]) -> Report {
                         | Format::StrictCompact
                         | Format::SortedTuples
                         | Format::PdaDefinition
+                        | Format::PdaMachine
                         | Format::Productions
                         | Format::PngFilename
                         | Format::StatePairs { .. }
@@ -461,7 +464,23 @@ pub fn check(assignment_id: &str, bytes: &[u8]) -> Report {
             }
             sorted |= normalized_rows != before;
         }
-        let body = if spec.format == Format::PdaDefinition {
+        let body = if spec.format == Format::PdaMachine {
+            if let Some((first, transitions)) = normalized_rows.split_first_mut() {
+                let definition = assignments::normalize_pda_definition(first);
+                sorted_sets |= definition != *first;
+                let before = transitions.to_vec();
+                transitions.sort_unstable_by(|a, b| {
+                    tuple_fields(a).cmp(tuple_fields(b)).then_with(|| a.cmp(b))
+                });
+                sorted |= transitions != before;
+                std::iter::once(definition)
+                    .chain(transitions.iter().map(|s| (*s).to_owned()))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            } else {
+                String::new()
+            }
+        } else if spec.format == Format::PdaDefinition {
             normalized_rows
                 .iter()
                 .map(|value| {
@@ -587,6 +606,7 @@ fn check_row(r: &mut Report, spec: &Section, row: &AnswerLine<'_>) {
         Format::StrictCompact
             | Format::SortedTuples
             | Format::PdaDefinition
+            | Format::PdaMachine
             | Format::StartedTransitions
     ) && row.text.contains([' ', '\t'])
     {

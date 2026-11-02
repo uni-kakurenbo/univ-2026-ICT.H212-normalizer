@@ -9,6 +9,10 @@ pub const MAX_BYTES: usize = 1024 * 1024;
 pub enum Format {
     Compact,
     StrictCompact,
+    /// Strict compact tuples, compared field by field in ASCII string order.
+    SortedTuples,
+    /// One NPDA declaration; only its set members are sorted.
+    PdaDefinition,
     Prose,
     /// Preserve algebraic work, explanations and indentation in source order.
     AlgebraicDerivation,
@@ -136,6 +140,14 @@ fn hash_final_state_candidate(text: &str) -> bool {
 }
 pub(crate) fn edge_trim(text: &str) -> &str {
     text.trim_matches([' ', '\t'])
+}
+
+fn tuple_fields(value: &str) -> impl Iterator<Item = &str> {
+    value
+        .strip_prefix('(')
+        .and_then(|s| s.strip_suffix(')'))
+        .unwrap_or(value)
+        .split(',')
 }
 
 fn looks_like_marker(text: &str) -> bool {
@@ -350,6 +362,7 @@ pub fn check(assignment_id: &str, bytes: &[u8]) -> Report {
     let mut removed_blanks = false;
     let mut sorted = false;
     let mut sorted_pairs = false;
+    let mut sorted_sets = false;
     for (index, spec) in assignment.sections.iter().enumerate() {
         if !seen[index] {
             r.issue(
@@ -418,6 +431,8 @@ pub fn check(assignment_id: &str, bytes: &[u8]) -> Report {
                     spec.format,
                     Format::Compact
                         | Format::StrictCompact
+                        | Format::SortedTuples
+                        | Format::PdaDefinition
                         | Format::Productions
                         | Format::PngFilename
                         | Format::StatePairs { .. }
@@ -435,12 +450,28 @@ pub fn check(assignment_id: &str, bytes: &[u8]) -> Report {
                 normalized_rows.push(value);
             }
         }
-        if spec.format == Format::Productions {
+        if matches!(spec.format, Format::Productions | Format::SortedTuples) {
             let before = normalized_rows.clone();
-            normalized_rows.sort_unstable(); // Rust string order = ASCII byte order here, no locale collation.
+            if spec.format == Format::SortedTuples {
+                normalized_rows.sort_unstable_by(|a, b| {
+                    tuple_fields(a).cmp(tuple_fields(b)).then_with(|| a.cmp(b))
+                });
+            } else {
+                normalized_rows.sort_unstable(); // ASCII byte order, no locale collation.
+            }
             sorted |= normalized_rows != before;
         }
-        let body = if matches!(spec.format, Format::StatePairs { .. }) {
+        let body = if spec.format == Format::PdaDefinition {
+            normalized_rows
+                .iter()
+                .map(|value| {
+                    let normalized = assignments::normalize_pda_definition(value);
+                    sorted_sets |= normalized != *value;
+                    normalized
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        } else if matches!(spec.format, Format::StatePairs { .. }) {
             let mut pairs: Vec<_> = normalized_rows
                 .iter()
                 .map(|value| normalize_state_pair(value))
@@ -522,7 +553,12 @@ pub fn check(assignment_id: &str, bytes: &[u8]) -> Report {
         r.changes
             .push("状態の組の左右と各行を ASCII の辞書順に並べ替え（重複は保持）");
     }
+    if sorted_sets {
+        r.changes
+            .push("NPDA の定義に含まれる集合を ASCII の辞書順に並べ替え（重複は保持）");
+    }
     if unambiguous {
+        assignments::check_related_sections(assignment.id, &mut r, &bodies);
         let hash_input = format!("{}\n", blocks.join("\n\n"));
         let mut header_text = headers
             .iter()
@@ -548,7 +584,10 @@ fn check_row(r: &mut Report, spec: &Section, row: &AnswerLine<'_>) {
     use Severity::*;
     if matches!(
         spec.format,
-        Format::StrictCompact | Format::StartedTransitions
+        Format::StrictCompact
+            | Format::SortedTuples
+            | Format::PdaDefinition
+            | Format::StartedTransitions
     ) && row.text.contains([' ', '\t'])
     {
         r.issue(Error, "forbidden-space", Some(row.number), "この解答欄にはスペース・タブを入れません。修正案では行の端の空白のみ除き、行中の空白は保持します。");

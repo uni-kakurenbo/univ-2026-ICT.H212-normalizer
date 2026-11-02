@@ -10,9 +10,12 @@ mod a09;
 mod a11;
 mod a12;
 mod a13;
+mod a14;
 mod cfg_procedure;
 
-use crate::Section;
+use crate::{AnswerLine, Report, Section};
+
+pub(crate) use a14::normalize_definition as normalize_pda_definition;
 
 pub struct Assignment {
     pub id: &'static str,
@@ -38,8 +41,17 @@ pub static ASSIGNMENTS: &[Assignment] = &[
     a11::ASSIGNMENT,
     a12::ASSIGNMENT,
     a13::ASSIGNMENT,
+    a14::ASSIGNMENT,
 ];
 
 pub fn get(id: &str) -> Option<&'static Assignment> {
     ASSIGNMENTS.iter().find(|a| a.id == id)
+}
+
+// Cross-section checks are opt-in and run only after section boundaries have
+// been identified unambiguously. Earlier assignments keep their hash behavior.
+pub(crate) fn check_related_sections(id: &str, r: &mut Report, bodies: &[Vec<AnswerLine<'_>>]) {
+    if id == "14" {
+        a14::check_related(r, bodies);
+    }
 }

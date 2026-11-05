@@ -152,9 +152,16 @@ fn tuple_fields(value: &str) -> impl Iterator<Item = &str> {
         .split(',')
 }
 
-fn looks_like_marker(text: &str) -> bool {
+fn looks_like_marker(text: &str, allow_ex: bool) -> bool {
     let Some((id, equals)) = text.split_once('=') else {
         return false;
+    };
+    // Opt in for the new named assignment; earlier hashes keep their existing
+    // treatment of prose/answer lines that happen to contain "ex-...=".
+    let id = if allow_ex {
+        id.strip_prefix("ex-").unwrap_or(id)
+    } else {
+        id
     };
     !id.is_empty()
         && id.starts_with(|c: char| c.is_ascii_digit())
@@ -304,7 +311,7 @@ pub fn check(assignment_id: &str, bytes: &[u8]) -> Report {
                 );
                 unambiguous = false;
             }
-        } else if looks_like_marker(line.trim())
+        } else if looks_like_marker(line.trim(), assignment.id == "ex")
             || (!line.trim().is_empty() && line.trim().chars().all(|c| c == '='))
         {
             r.issue(Error, "delimiter", Some(number), "設問番号や = の個数・空白がテンプレートと一致しません。選択した課題も確認してください。");

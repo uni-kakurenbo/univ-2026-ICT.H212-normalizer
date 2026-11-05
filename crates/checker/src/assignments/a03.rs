@@ -40,7 +40,7 @@ pub const ASSIGNMENT: Assignment = Assignment {
 pub(super) fn check_transitions(r: &mut Report, rows: &[&AnswerLine<'_>]) {
     if let Some(finals) = rows.first() {
         if !edge_trim(finals.text).split(',').all(valid_token) {
-            r.issue(Severity::Error, "final-states", Some(finals.number), "最初の解答行には最終状態をカンマ区切りで記載してください。例：A,B。括弧・空要素・空白は使いません。状態の存在や受理条件は検査しません。");
+            r.issue(Severity::Error, "final-states", Some(finals.number), "最初の解答行には最終状態をカンマ区切りで記載してください。例：A,B。括弧・空要素・空白は使いません。");
         }
         let states: Vec<_> = edge_trim(finals.text).split(',').collect();
         if states.windows(2).any(|pair| pair[0] > pair[1]) {
@@ -53,7 +53,7 @@ pub(super) fn check_transitions(r: &mut Report, rows: &[&AnswerLine<'_>]) {
     for row in transitions {
         let value = edge_trim(row.text);
         if parse_transition(value).is_none() {
-            r.issue(Severity::Error, "transition", Some(row.number), "遷移は (状態,入力記号,状態) の三つ組を空白なしで1行に1つ記載してください。例：(S,a,A)。記号の意味は検査しません。");
+            r.issue(Severity::Error, "transition", Some(row.number), "遷移は (状態,入力記号,状態) の三つ組を空白なしで1行に1つ記載してください。例：(S,a,A)。");
         }
     }
     if let Some(pair) = transitions

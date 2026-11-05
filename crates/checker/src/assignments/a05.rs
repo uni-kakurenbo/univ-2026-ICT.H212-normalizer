@@ -47,6 +47,18 @@ fn check_epsilon_automaton(r: &mut Report, rows: &[&AnswerLine<'_>]) {
 }
 
 fn known_subset_tokens(label: &str) -> Option<Vec<&str>> {
+    two_byte_subset_tokens(
+        label,
+        &["q0", "q1", "q2", "q3", "r0", "r1", "r2", "r3", "r4"],
+    )
+}
+
+// Both assignment 05 and ex use explicitly known two-byte original names.
+// Unknown names are left to the caller's assignment-specific policy.
+pub(super) fn two_byte_subset_tokens<'a>(
+    label: &'a str,
+    vocabulary: &[&str],
+) -> Option<Vec<&'a str>> {
     if label.is_empty() || !label.is_ascii() || !label.len().is_multiple_of(2) {
         return None;
     }
@@ -56,12 +68,7 @@ fn known_subset_tokens(label: &str) -> Option<Vec<&str>> {
         .collect();
     tokens
         .iter()
-        .all(|token| {
-            matches!(
-                *token,
-                "q0" | "q1" | "q2" | "q3" | "r0" | "r1" | "r2" | "r3" | "r4"
-            )
-        })
+        .all(|token| vocabulary.contains(token))
         .then_some(tokens)
 }
 

@@ -70,23 +70,32 @@ fn check_pairs(r: &mut Report, rows: &[&AnswerLine<'_>]) {
 
 fn check_numbered_automaton(r: &mut Report, rows: &[&AnswerLine<'_>]) {
     check_transitions(r, rows);
+    check_state_numbers(r, rows, 'q', "6-1.3");
+}
+
+pub(super) fn check_state_numbers(
+    r: &mut Report,
+    rows: &[&AnswerLine<'_>],
+    prefix: char,
+    section: &str,
+) {
     let mut seen = BTreeSet::new();
     let mut numbered = BTreeSet::new();
     for (state, line) in state_labels(rows) {
         if !seen.insert(state) {
             continue;
         }
-        let valid = state.strip_prefix('q').is_some_and(|number| {
+        let valid = state.strip_prefix(prefix).is_some_and(|number| {
             number.starts_with(|c: char| matches!(c, '1'..='9'))
                 && number.bytes().all(|c| c.is_ascii_digit())
         });
         if valid {
             numbered.insert(state);
         } else {
-            r.issue(Severity::Error, "numbered-state", Some(line), format!("6-1.3 の状態名 {state} は q1,q2,… の形式ではありません。小文字 q と1以上の整数を用い、先頭に余分な0を付けません。状態名は自動変更しません。"));
+            r.issue(Severity::Error, "numbered-state", Some(line), format!("{section} の状態名 {state} は {prefix}1,{prefix}2,… の形式ではありません。小文字 {prefix} と1以上の整数を用い、先頭に余分な0を付けません。状態名は自動変更しません。"));
         }
     }
-    if (1..=numbered.len()).any(|i| !numbered.contains(format!("q{i}").as_str())) {
-        r.issue(Severity::Error, "numbered-state-sequence", None, "6-1.3 の状態名は q1 から番号を飛ばさず q1,q2,… としてください。どの元の状態集合に各番号を割り当てるかは検査しません。");
+    if (1..=numbered.len()).any(|i| !numbered.contains(format!("{prefix}{i}").as_str())) {
+        r.issue(Severity::Error, "numbered-state-sequence", None, format!("{section} の状態名は {prefix}1 から番号を飛ばさず {prefix}1,{prefix}2,… としてください。状態名は自動変更しません。"));
     }
 }

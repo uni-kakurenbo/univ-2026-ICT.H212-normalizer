@@ -38,11 +38,13 @@ jobs:
         shell: bash
         run: |
           cd "$RUNNER_TEMP"
-          curl -fLO https://github.com/trunk-rs/trunk/releases/download/v0.21.14/trunk-x86_64-unknown-linux-gnu.tar.gz
-          curl -fLO https://github.com/trunk-rs/trunk/releases/download/v0.21.14/trunk-x86_64-unknown-linux-gnu.tar.gz.sha256
-          trunk_expected=$(awk '{print $1}' trunk-x86_64-unknown-linux-gnu.tar.gz.sha256)
-          printf '%s  %s\n' "$trunk_expected" trunk-x86_64-unknown-linux-gnu.tar.gz | sha256sum --check
-          tar -xzf trunk-x86_64-unknown-linux-gnu.tar.gz
+          trunk_version=0.21.14
+          trunk_asset=trunk-x86_64-unknown-linux-gnu.tar.gz
+          trunk_sha256=f2b4680cd239693a646a2795e4633c625328d7b2a044fbe749fa3a2fe9e7036b
+
+          curl -fLO --retry 2 --retry-max-time 45 "https://github.com/trunk-rs/trunk/releases/download/v${trunk_version}/${trunk_asset}"
+          printf '%s  %s\n' "$trunk_sha256" "$trunk_asset" | sha256sum --check
+          tar -xzf "$trunk_asset"
           echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
       - name: Build static website
         run: trunk --skip-version-check build --release --locked --public-url "/${GITHUB_REPOSITORY#*/}/"

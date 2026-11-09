@@ -1,4 +1,7 @@
-use super::{Assignment, a07::check_proof_notation};
+use super::{
+    Assignment,
+    a07::{ProofNotation, check_proof_notation},
+};
 use crate::{AnswerLine, Format, Report, Section};
 
 // Sources: 13_answer-sheet.txt; autolang第13回.pdf pp.5, 8–9.
@@ -34,5 +37,5 @@ pub const ASSIGNMENT: Assignment = Assignment {
 };
 
 fn check_notation(r: &mut Report, rows: &[&AnswerLine<'_>]) {
-    check_proof_notation(r, rows, None);
+    check_proof_notation(r, rows, ProofNotation::default());
 }

@@ -1,5 +1,8 @@
+use super::grammar::Rule;
 use crate::{AnswerLine, Report, Severity, edge_trim};
 use std::collections::{BTreeMap, BTreeSet};
+
+pub(super) mod npda;
 
 // Generic lecture procedures, applied to ORIGINAL problem grammars below.
 // Never retain/display solved sheets, transform submitted input, auto-correct
@@ -7,12 +10,6 @@ use std::collections::{BTreeMap, BTreeSet};
 const MAX_RULES: usize = 4096;
 const MAX_RHS: usize = 64;
 const STEPS: usize = 100_000;
-
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-struct Rule {
-    left: String,
-    right: Vec<String>,
-}
 
 #[derive(Clone)]
 struct Grammar {
@@ -323,14 +320,18 @@ fn cnf(grammar: &Grammar, budget: &mut Budget) -> Result<Grammar> {
     })
 }
 
-fn reachable(grammar: &Grammar, budget: &mut Budget) -> Result<BTreeSet<Rule>> {
+fn reachable(
+    grammar: &Grammar,
+    budget: &mut Budget,
+    is_nonterminal: impl Fn(&str) -> bool,
+) -> Result<BTreeSet<Rule>> {
     let mut seen = BTreeSet::from([grammar.start.clone()]);
     loop {
         let mut changed = false;
         for rule in &grammar.rules {
             budget.step()?;
             if seen.contains(&rule.left) {
-                for symbol in rule.right.iter().filter(|s| nonterminal(s)) {
+                for symbol in rule.right.iter().filter(|s| is_nonterminal(s)) {
                     changed |= seen.insert(symbol.clone());
                 }
             }
@@ -348,7 +349,7 @@ fn reachable(grammar: &Grammar, budget: &mut Budget) -> Result<BTreeSet<Rule>> {
 }
 
 fn matches(submitted: &BTreeSet<Rule>, expected: &Grammar, budget: &mut Budget) -> Result<bool> {
-    Ok(*submitted == expected.rules || *submitted == reachable(expected, budget)?)
+    Ok(*submitted == expected.rules || *submitted == reachable(expected, budget, nonterminal)?)
 }
 
 pub(super) fn check(r: &mut Report, rows: &[&AnswerLine<'_>], problem: Problem) {

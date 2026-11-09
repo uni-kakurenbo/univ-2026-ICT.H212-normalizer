@@ -35,6 +35,10 @@ pub const ASSIGNMENT: Assignment = Assignment {
 };
 
 pub(super) fn check_productions(r: &mut Report, rows: &[&AnswerLine<'_>]) {
+    check_production_format(r, rows, true);
+}
+
+pub(super) fn check_production_format(r: &mut Report, rows: &[&AnswerLine<'_>], sorted: bool) {
     use Severity::*;
     for row in rows {
         let value = edge_trim(row.text);
@@ -60,9 +64,11 @@ pub(super) fn check_productions(r: &mut Report, rows: &[&AnswerLine<'_>]) {
             );
         }
     }
-    if let Some(pair) = rows
-        .windows(2)
-        .find(|pair| edge_trim(pair[0].text) > edge_trim(pair[1].text))
+
+    if sorted
+        && let Some(pair) = rows
+            .windows(2)
+            .find(|pair| edge_trim(pair[0].text) > edge_trim(pair[1].text))
     {
         r.issue(
             Error,

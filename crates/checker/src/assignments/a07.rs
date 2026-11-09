@@ -33,16 +33,32 @@ pub const ASSIGNMENT: Assignment = Assignment {
 };
 
 fn check_notation(r: &mut Report, rows: &[&AnswerLine<'_>]) {
-    check_proof_notation(r, rows, Some("eps"));
+    check_proof_notation(
+        r,
+        rows,
+        ProofNotation {
+            empty_word: Some("eps"),
+            ..ProofNotation::default()
+        },
+    );
 }
 
-// Reused by assignment 13, whose template has the same math notation but no
-// specified ASCII spelling for the empty word. None must never require eps.
+#[derive(Default)]
+pub(super) struct ProofNotation {
+    pub empty_word: Option<&'static str>,
+    pub set_operators: bool,
+}
+
 pub(super) fn check_proof_notation(
     r: &mut Report,
     rows: &[&AnswerLine<'_>],
-    empty_word: Option<&str>,
+    notation: ProofNotation,
 ) {
+    let ProofNotation {
+        empty_word,
+        set_operators,
+    } = notation;
+
     for row in rows {
         let text = row.text;
         if text.contains(['≤', '≥', '≦', '≧', '≠', '＝', '＜', '＞']) {
@@ -56,6 +72,18 @@ pub(super) fn check_proof_notation(
                 "所属の記法は u in L または u not in L を使ってください。∈・∉ は使いません。",
             );
         }
+
+        let invalid_set_operator =
+            set_operators && (text.contains(['∪', '∩', '∁']) || complement_bar(text));
+        if invalid_set_operator {
+            r.issue(
+                Severity::Error,
+                "math-set-operator",
+                Some(row.number),
+                "補集合は ~L、共通集合は L1 and L2、和集合は L1 or L2 の形で記載してください。",
+            );
+        }
+
         if let Some(notation) = empty_word
             && text.contains(['ε', 'ϵ'])
         {
@@ -129,11 +157,15 @@ pub(super) fn check_proof_notation(
         }
         let unusual = text.chars().any(|c| {
             !matches!(c, 'ε' | 'ϵ')
+                && !(set_operators && matches!(c, '∪' | '∩'))
                 && matches!(c,
             'α'..='ω' | 'Α'..='Ω' | '⁰'..='ₜ' | '²' | '³' | '¹' | '\u{1d400}'..='\u{1d7ff}' |
             '∀' | '∃' | '∅' | '∞' | '∧' | '∨' | '⇒' | '→' | '∪' | '∩' | '⊆' | '⊂' |
             '−' | '×' | '｜' | '＾' | '０'..='９' | 'Ａ'..='Ｚ' | 'ａ'..='ｚ')
         });
+        let possible_set_operator = set_operators
+            && !invalid_set_operator
+            && (text.contains(['∼', '˜', '\u{0304}', '\u{0305}']) || text.contains("～L"));
         let command = text
             .as_bytes()
             .windows(2)
@@ -148,6 +180,7 @@ pub(super) fn check_proof_notation(
         let unspecified_empty = empty_word.is_none() && text.contains(['ε', 'ϵ']);
         if candidate
             || unusual
+            || possible_set_operator
             || command
             || non_ascii_length
             || text.contains('$')
@@ -160,4 +193,22 @@ pub(super) fn check_proof_notation(
             r.issue(Severity::Warning, "math-possible", Some(row.number), format!("数式の誤表記である可能性があります。数式らしい記号・表記を検出しました。{notation}文章中の記号なら変更は不要です。"));
         }
     }
+}
+
+fn complement_bar(text: &str) -> bool {
+    text.char_indices().any(|(i, c)| {
+        if !matches!(c, '\u{0304}' | '\u{0305}') {
+            return false;
+        }
+
+        text[..i]
+            .trim_end_matches(|c: char| c.is_ascii_digit())
+            .strip_suffix('L')
+            .is_some_and(|prefix| {
+                prefix
+                    .chars()
+                    .next_back()
+                    .is_none_or(|c| !c.is_ascii_alphanumeric())
+            })
+    })
 }

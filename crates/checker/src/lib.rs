@@ -15,6 +15,10 @@ pub enum Format {
     PdaDefinition,
     /// First row is an NPDA declaration; subsequent rows are sorted tuples.
     PdaMachine,
+    /// A CFG declaration followed by productions. Sort only when specified.
+    DeclaredGrammar {
+        sorted: bool,
+    },
     Prose,
     /// Preserve algebraic work, explanations and indentation in source order.
     AlgebraicDerivation,
@@ -372,6 +376,7 @@ pub fn check(assignment_id: &str, bytes: &[u8]) -> Report {
     let mut sorted = false;
     let mut sorted_pairs = false;
     let mut sorted_sets = false;
+    let mut sorted_grammar_sets = false;
     for (index, spec) in assignment.sections.iter().enumerate() {
         if !seen[index] {
             r.issue(
@@ -443,6 +448,7 @@ pub fn check(assignment_id: &str, bytes: &[u8]) -> Report {
                         | Format::SortedTuples
                         | Format::PdaDefinition
                         | Format::PdaMachine
+                        | Format::DeclaredGrammar { .. }
                         | Format::Productions
                         | Format::PngFilename
                         | Format::StatePairs { .. }
@@ -471,7 +477,25 @@ pub fn check(assignment_id: &str, bytes: &[u8]) -> Report {
             }
             sorted |= normalized_rows != before;
         }
-        let body = if spec.format == Format::PdaMachine {
+        let body = if spec.format == (Format::DeclaredGrammar { sorted: true }) {
+            if let Some((first, rules)) = normalized_rows.split_first_mut() {
+                let declaration = assignments::normalize_grammar_declaration(first);
+                sorted_grammar_sets |= declaration != *first;
+                let before = rules.to_vec();
+                rules.sort_unstable();
+                sorted |= rules != before;
+                let mut body = declaration;
+
+                for rule in rules {
+                    body.push('\n');
+                    body.push_str(rule);
+                }
+
+                body
+            } else {
+                String::new()
+            }
+        } else if spec.format == Format::PdaMachine {
             if let Some((first, transitions)) = normalized_rows.split_first_mut() {
                 let definition = assignments::normalize_pda_definition(first);
                 sorted_sets |= definition != *first;
@@ -583,6 +607,10 @@ pub fn check(assignment_id: &str, bytes: &[u8]) -> Report {
         r.changes
             .push("NPDA の定義に含まれる集合を ASCII の辞書順に並べ替え（重複は保持）");
     }
+    if sorted_grammar_sets {
+        r.changes
+            .push("CFG の宣言に含まれる集合を ASCII の辞書順に並べ替え（重複は保持）");
+    }
     if unambiguous {
         assignments::check_related_sections(assignment.id, &mut r, &bodies);
         let hash_input = format!("{}\n", blocks.join("\n\n"));
@@ -614,6 +642,7 @@ fn check_row(r: &mut Report, spec: &Section, row: &AnswerLine<'_>) {
             | Format::SortedTuples
             | Format::PdaDefinition
             | Format::PdaMachine
+            | Format::DeclaredGrammar { .. }
             | Format::StartedTransitions
     ) && row.text.contains([' ', '\t'])
     {

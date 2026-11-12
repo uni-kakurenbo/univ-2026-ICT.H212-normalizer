@@ -1,6 +1,6 @@
 use super::{
     Assignment,
-    a07::{ProofNotation, check_proof_notation},
+    a07::check_set_proof_notation,
     grammar::{self, Form, Notation},
 };
 use crate::{AnswerLine, Format, Report, Section};
@@ -25,7 +25,7 @@ pub const ASSIGNMENT: Assignment = Assignment {
             marker: "17-2=====",
             ascii: false,
             format: Format::Prose,
-            validate: Some(check_proof),
+            validate: Some(check_set_proof_notation),
         },
         Section {
             id: "17-3.1",
@@ -76,17 +76,6 @@ fn check_g2(r: &mut Report, rows: &[&AnswerLine<'_>]) {
             name: "G2",
             production_set: "P2",
             notation: Notation::Letters,
-        },
-    );
-}
-
-fn check_proof(r: &mut Report, rows: &[&AnswerLine<'_>]) {
-    check_proof_notation(
-        r,
-        rows,
-        ProofNotation {
-            set_operators: true,
-            ..ProofNotation::default()
         },
     );
 }

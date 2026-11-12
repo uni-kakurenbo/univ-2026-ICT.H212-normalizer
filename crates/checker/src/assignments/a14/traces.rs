@@ -1,33 +1,7 @@
-use super::{Definition, configuration, decode, definition, transition};
+use super::configuration;
+use crate::assignments::pda::{Declared, Definition, Syntax};
 use crate::{AnswerLine, Report, Severity, edge_trim};
 use std::collections::BTreeSet;
-
-struct Declared<'a> {
-    states: BTreeSet<&'a str>,
-    input: BTreeSet<&'a str>,
-    stack: [bool; 256],
-    finals: BTreeSet<&'a str>,
-}
-
-impl<'a> Declared<'a> {
-    fn from(d: &Definition<'a>) -> Self {
-        let mut stack = [false; 256];
-        for symbol in &d.sets[2] {
-            if let [c] = symbol.as_bytes() {
-                stack[usize::from(*c)] = true;
-            }
-        }
-        Self {
-            states: d.sets[0].iter().copied().collect(),
-            input: d.sets[1].iter().copied().collect(),
-            stack,
-            finals: d.sets[3].iter().copied().collect(),
-        }
-    }
-    fn stack_contains(&self, value: &str) -> bool {
-        value.bytes().all(|c| self.stack[usize::from(c)])
-    }
-}
 
 pub(super) fn check_related(r: &mut Report, bodies: &[Vec<AnswerLine<'_>>]) {
     let [transitions, definitions, aa, aba] = bodies else {
@@ -79,7 +53,7 @@ pub(in crate::assignments) fn check_machine(
         definition_unchecked(r);
         return;
     }
-    let Some(d) = definition(edge_trim(row.text)) else {
+    let Some(d) = Syntax::Alphanumeric.definition(edge_trim(row.text)) else {
         definition_unchecked(r);
         return;
     };
@@ -89,17 +63,11 @@ pub(in crate::assignments) fn check_machine(
     let mut rules = BTreeSet::new();
     let mut valid = true;
     for row in transitions {
-        let Some(rule) = transition(edge_trim(row.text)) else {
+        let Some(rule) = Syntax::Alphanumeric.transition(edge_trim(row.text)) else {
             valid = false;
             continue;
         };
-        let [from, input, pop, to, push] = rule;
-        if !declared.states.contains(from)
-            || !declared.states.contains(to)
-            || (input != "$" && !declared.input.contains(input))
-            || !declared.stack_contains(pop)
-            || !declared.stack_contains(decode(push))
-        {
+        if !declared.contains_transition(rule) {
             r.issue(Severity::Error, "mechanical-pda-declaration", Some(row.number), format!("遷移の状態・入力記号・スタック記号が {} の K/Σ/Γ に含まれていません。宣言と遷移を対応させてください。", spec.definition_section));
         }
         rules.insert(rule);

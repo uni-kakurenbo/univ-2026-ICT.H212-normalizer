@@ -49,6 +49,17 @@ pub(super) struct ProofNotation {
     pub set_operators: bool,
 }
 
+pub(super) fn check_set_proof_notation(r: &mut Report, rows: &[&AnswerLine<'_>]) {
+    check_proof_notation(
+        r,
+        rows,
+        ProofNotation {
+            set_operators: true,
+            ..ProofNotation::default()
+        },
+    );
+}
+
 pub(super) fn check_proof_notation(
     r: &mut Report,
     rows: &[&AnswerLine<'_>],

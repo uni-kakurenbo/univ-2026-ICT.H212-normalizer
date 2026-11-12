@@ -14,14 +14,16 @@ mod a14;
 mod a15;
 mod a16;
 mod a17;
+mod a18;
 mod a_ex;
 mod cfg_procedure;
 mod grammar;
+mod pda;
 
 use crate::{AnswerLine, Report, Section};
 
-pub(crate) use a14::normalize_definition as normalize_pda_definition;
 pub(crate) use grammar::normalize_declaration as normalize_grammar_declaration;
+pub(crate) use pda::normalize_definition as normalize_pda_definition;
 
 pub struct Assignment {
     pub id: &'static str,
@@ -51,6 +53,7 @@ pub static ASSIGNMENTS: &[Assignment] = &[
     a15::ASSIGNMENT,
     a16::ASSIGNMENT,
     a17::ASSIGNMENT,
+    a18::ASSIGNMENT,
     a_ex::ASSIGNMENT,
 ];
 

@@ -14,7 +14,9 @@ pub enum Format {
     /// One NPDA declaration; only its set members are sorted.
     PdaDefinition,
     /// First row is an NPDA declaration; subsequent rows are sorted tuples.
-    PdaMachine,
+    PdaMachine {
+        sort_sets: bool,
+    },
     /// A CFG declaration followed by productions. Sort only when specified.
     DeclaredGrammar {
         sorted: bool,
@@ -447,7 +449,7 @@ pub fn check(assignment_id: &str, bytes: &[u8]) -> Report {
                         | Format::StrictCompact
                         | Format::SortedTuples
                         | Format::PdaDefinition
-                        | Format::PdaMachine
+                        | Format::PdaMachine { .. }
                         | Format::DeclaredGrammar { .. }
                         | Format::Productions
                         | Format::PngFilename
@@ -495,9 +497,13 @@ pub fn check(assignment_id: &str, bytes: &[u8]) -> Report {
             } else {
                 String::new()
             }
-        } else if spec.format == Format::PdaMachine {
+        } else if let Format::PdaMachine { sort_sets } = spec.format {
             if let Some((first, transitions)) = normalized_rows.split_first_mut() {
-                let definition = assignments::normalize_pda_definition(first);
+                let definition = if sort_sets {
+                    assignments::normalize_pda_definition(first)
+                } else {
+                    (*first).to_owned()
+                };
                 sorted_sets |= definition != *first;
                 let before = transitions.to_vec();
                 transitions.sort_unstable_by(|a, b| {
@@ -641,7 +647,7 @@ fn check_row(r: &mut Report, spec: &Section, row: &AnswerLine<'_>) {
         Format::StrictCompact
             | Format::SortedTuples
             | Format::PdaDefinition
-            | Format::PdaMachine
+            | Format::PdaMachine { .. }
             | Format::DeclaredGrammar { .. }
             | Format::StartedTransitions
     ) && row.text.contains([' ', '\t'])

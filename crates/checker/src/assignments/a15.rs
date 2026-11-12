@@ -1,4 +1,4 @@
-use super::{Assignment, a14};
+use super::{Assignment, a14, pda::Syntax};
 use crate::{AnswerLine, Format, Report, Section, Severity, edge_trim};
 use std::collections::BTreeSet;
 
@@ -32,7 +32,7 @@ pub const ASSIGNMENT: Assignment = Assignment {
             id: "15-1",
             marker: "15-1=====",
             ascii: true,
-            format: Format::PdaMachine,
+            format: Format::PdaMachine { sort_sets: true },
             validate: Some(check_machine),
         },
         Section {
@@ -56,7 +56,7 @@ fn check_machine(r: &mut Report, rows: &[&AnswerLine<'_>]) {
     let mut q0 = BTreeSet::new();
     let mut valid = true;
     for row in transitions {
-        match a14::transition(edge_trim(row.text)) {
+        match Syntax::Alphanumeric.transition(edge_trim(row.text)) {
             Some(t) if t[0] == "q0" => {
                 q0.insert(t);
             }
@@ -106,7 +106,7 @@ pub(super) fn check_related(r: &mut Report, bodies: &[Vec<AnswerLine<'_>>]) {
 fn compare_construction(r: &mut Report, definitions: &[&AnswerLine<'_>], rows: &[&AnswerLine<'_>]) {
     let parsed: Option<BTreeSet<_>> = rows
         .iter()
-        .map(|row| a14::transition(edge_trim(row.text)))
+        .map(|row| Syntax::Alphanumeric.transition(edge_trim(row.text)))
         .collect();
     let Some(submitted) = parsed.filter(|set| !set.is_empty()) else {
         r.issue(
@@ -119,7 +119,7 @@ fn compare_construction(r: &mut Report, definitions: &[&AnswerLine<'_>], rows: &
     };
     if definitions
         .first()
-        .and_then(|row| a14::definition(edge_trim(row.text)))
+        .and_then(|row| Syntax::Alphanumeric.definition(edge_trim(row.text)))
         .is_none()
     {
         r.issue(
